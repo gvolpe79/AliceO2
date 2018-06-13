@@ -38,11 +38,15 @@ class Detector : public o2::Base::DetImpl<Detector>
     }
     return nullptr;
   }
-
+  
+  void Initialize() override;
   bool ProcessHits(FairVolume* v) override;
+  HitType* AddHit(float x, float y, float z, float time, float energy, Int_t trackId, Int_t detId);  
+  void GenFee(Float_t qtot);
+  Bool_t IsLostByFresnel();
+  Float_t Fresnel(Float_t ene,Float_t pdoti, Bool_t pola);
   void Register() override;
   void Reset() override;
-  void Initialize() override;
   // void AddAlignableVolumes() const;
   void IdealPosition(int iCh, TGeoHMatrix* pMatrix);
   void IdealPositionCradle(int iCh, TGeoHMatrix* pMatrix);

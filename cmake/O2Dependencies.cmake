@@ -1267,9 +1267,35 @@ o2_define_bucket(
 
 o2_define_bucket(
     NAME
+    hmpid_base_bucket
+
+    DEPENDENCIES
+    root_base_bucket
+    fairroot_base_bucket
+    HMPIDBase
+    Geom
+    MathCore
+    Matrix
+    Physics
+    ParBase
+    VMC
+    Geom
+    SimulationDataFormat
+    CommonDataFormat
+
+    INCLUDE_DIRECTORIES
+    ${FAIRROOT_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/DataFormats/simulation/include
+    ${CMAKE_SOURCE_DIR}/DataFormats/common/include
+    ${CMAKE_SOURCE_DIR}/Common/MathUtils/include
+)
+
+o2_define_bucket(
+    NAME
     hmpid_simulation_bucket
 
     DEPENDENCIES # library names
+    hmpid_base_bucket
     root_base_bucket
     fairroot_geom
     RIO
