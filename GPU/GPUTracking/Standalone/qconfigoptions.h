@@ -1,0 +1,1 @@
+../qconfigoptions.h
