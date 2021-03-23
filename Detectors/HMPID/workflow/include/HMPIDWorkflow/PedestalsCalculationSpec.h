@@ -50,6 +50,7 @@ class PedestalsCalculationTask : public framework::Task
   o2::ccdb::CcdbApi mDBapi;
   std::map<std::string, std::string> mDbMetadata; // can be empty
   bool mWriteToDB;
+  bool mFastAlgorithm;
 
   ExecutionTimer mExTimer;
 };

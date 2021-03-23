@@ -76,6 +76,7 @@ void RawToDigitsTask::init(framework::InitContext& ic)
   mOutRootFileName = ic.options().get<std::string>("out-file");
   mBaseFileName = ic.options().get<std::string>("base-file");
   mInputRawFileName = ic.options().get<std::string>("in-file");
+  mFastAlgorithm = ic.options().get<bool>("fast-decode");
   mDigitsReceived = 0;
   mFramesReceived = 0;
 
@@ -128,7 +129,16 @@ void RawToDigitsTask::run(framework::ProcessingContext& pc)
         uint32_t* ptrBufferEnd = ptrBuffer + zs / 4;
         mDecod->setUpStream(ptrBuffer, zs);
         while(ptrBuffer<ptrBufferEnd){
-          mDecod->decodePageFast(&ptrBuffer);
+          try {
+            if(mFastAlgorithm) {
+              mDecod->decodePageFast(&ptrBuffer);
+            } else {
+              mDecod->decodePage(&ptrBuffer);
+            }
+          } catch (int e) {
+            // The stream end !
+            LOG(DEBUG) << "End Page decoding !";
+          }
           int first = mAccumulateDigits.size();
           mAccumulateDigits.insert(mAccumulateDigits.end(), mDecod->mDigits.begin(), mDecod->mDigits.end());
           int last = mAccumulateDigits.size() - 1;
@@ -179,7 +189,16 @@ void RawToDigitsTask::parseNoTF()
     uint32_t* ptrBufferEnd = ptrBuffer + sz / 4;
     mDecod->setUpStream(ptrBuffer, sz);
     while(ptrBuffer<ptrBufferEnd){
-      mDecod->decodePageFast(&ptrBuffer);
+      try {
+        if(mFastAlgorithm) {
+          mDecod->decodePageFast(&ptrBuffer);
+        } else {
+          mDecod->decodePage(&ptrBuffer);
+        }
+      } catch (int e) {
+        // The stream end !
+        LOG(DEBUG) << "End Fast Page decoding !";
+      }
       int first = mAccumulateDigits.size();
       mAccumulateDigits.insert(mAccumulateDigits.end(), mDecod->mDigits.begin(), mDecod->mDigits.end());
       int last = mAccumulateDigits.size() - 1;
@@ -369,6 +388,7 @@ o2::framework::DataProcessorSpec getRawToDigitsSpec(std::string inputSpec)
     outputs,
     AlgorithmSpec{adaptFromTask<RawToDigitsTask>()},
     Options{{"in-file", VariantType::String, "hmpidRaw.raw", {"name of the input Raw file"}},
+            {"fast-decode", VariantType::Bool, false, {"Use the fast algorithm. (error 0.8%)"}},
             {"out-file", VariantType::String, "hmpReco.root", {"name of the output file"}},
             {"base-file", VariantType::String, "hmpDecode", {"base name for statistical output file"}}}};
 }

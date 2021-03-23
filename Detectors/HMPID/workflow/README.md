@@ -2,7 +2,7 @@
 \page refHMPworkflow HMP workflow
 /doxy -->
 
-# DPL workflows for the HMPID  v.0.6
+# DPL workflows for the HMPID  v.0.7
 
 ## HMPID DPL processors
 
@@ -56,6 +56,7 @@ Data processor options: HMP-DataDecoder:
   --root-file arg (=/tmp/hmpRawDecodeResults)
                   Name of the Root file with the decoding
                   results.
+  --fast-decode   Use the fast algorithm. (error 0.8%
 ```
 
 
@@ -108,6 +109,7 @@ Data processor options: HMPDigitWriter:
   --in-file arg (=hmpidRaw.raw)         name of the input Raw file
   --out-file arg (=hmpReco.root)        name of the output file
   --base-file arg (=hmpDecode)          base name for statistical output file
+  --fast-decode                         Use the fast algorithm. (error 0.8%)  
 ```
 
 Example
@@ -171,6 +173,7 @@ Data processor options: HMP-DataDecoder:
                                         pedestals/threshold values
   --sigmacut arg (=4)                   Sigma values for the Thresholds
                                         calculation.
+  --fast-decode                         Use the fast algorithm. (error 0.8%)
 ```
 
 Example

@@ -44,6 +44,7 @@ class DigitsToRawSpec : public framework::Task
   bool mSkipEmpty = false;
   bool mDumpDigits = false;
   std::string mFileFor = "all";
+  bool mFastAlgorithm;
 
   std::vector<o2::hmpid::raw::Digit> mDigits;
   long mDigitsReceived;

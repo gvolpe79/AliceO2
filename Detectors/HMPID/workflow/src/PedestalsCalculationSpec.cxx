@@ -78,6 +78,7 @@ void PedestalsCalculationTask::init(framework::InitContext& ic)
   mPedestalTag = ic.options().get<std::string>("pedestals-tag");
   mDBapi.init(ic.options().get<std::string>("ccdb-uri")); // or http://localhost:8080 for a local installation
   mWriteToDB = mDBapi.isHostReachable() ? true : false;
+  mFastAlgorithm = ic.options().get<bool>("fast-decode");
 
   mExTimer.start();
   return;
@@ -229,8 +230,18 @@ void PedestalsCalculationTask::decodeTF(framework::ProcessingContext& pc)
   for (auto it = parser.begin(), end = parser.end(); it != end; ++it) {
     uint32_t* theBuffer = (uint32_t*)it.raw();
     mDeco->setUpStream(theBuffer, it.size() + it.offset());
-    mDeco->decodePageFast(&theBuffer);
+    try {
+      if(mFastAlgorithm) {
+        mDeco->decodePageFast(&theBuffer);
+      } else {
+        mDeco->decodePage(&theBuffer);
+      }
+    } catch (int e) {
+      // The stream end !
+      LOG(DEBUG) << "End Fast Page decoding !";
+    }
     mTotalFrames++;
+    mTotalDigits += mDeco->mDigits.size();
   }
   return;
 }
@@ -249,7 +260,16 @@ void PedestalsCalculationTask::decodeReadout(framework::ProcessingContext& pc)
   for (auto it = parser.begin(), end = parser.end(); it != end; ++it) {
     uint32_t* theBuffer = (uint32_t*)it.raw();
     mDeco->setUpStream(theBuffer, it.size() + it.offset());
-    mDeco->decodePageFast(&theBuffer);
+    try {
+      if(mFastAlgorithm) {
+        mDeco->decodePageFast(&theBuffer);
+      } else {
+        mDeco->decodePage(&theBuffer);
+      }
+    } catch (int e) {
+      // The stream end !
+      LOG(DEBUG) << "End Fast Page decoding !";
+    }
   }
   return;
 }
@@ -277,7 +297,16 @@ void PedestalsCalculationTask::decodeRawFile(framework::ProcessingContext& pc)
       uint32_t* theBuffer = (uint32_t*)input.payload;
       int pagesize = header->payloadSize;
       mDeco->setUpStream(theBuffer, pagesize);
-      mDeco->decodePageFast(&theBuffer);
+      try {
+        if(mFastAlgorithm) {
+          mDeco->decodePageFast(&theBuffer);
+        } else {
+          mDeco->decodePage(&theBuffer);
+        }
+      } catch (int e) {
+        // The stream end !
+        LOG(DEBUG) << "End Fast Page decoding !";
+      }
     }
   }
   return;
@@ -305,6 +334,7 @@ o2::framework::DataProcessorSpec getPedestalsCalculationSpec(std::string inputSp
     Options{{"files-basepath", VariantType::String, "/tmp/hmpPedThr", {"Name of the Base Path of Pedestals/Thresholds files."}},
             {"use-ccdb", VariantType::Bool, false, {"Register the Pedestals/Threshold values into the CCDB"}},
             {"ccdb-uri", VariantType::String, "http://ccdb-test.cern.ch:8080", {"URI for the CCDB access."}},
+            {"fast-decode", VariantType::Bool, false, {"Use the fast algorithm. (error 0.8%)"}},
             {"pedestals-tag", VariantType::String, "Latest", {"The tag applied to this set of pedestals/threshold values"}},
             {"sigmacut", VariantType::Float, 4.0f, {"Sigma values for the Thresholds calculation."}}}};
 }

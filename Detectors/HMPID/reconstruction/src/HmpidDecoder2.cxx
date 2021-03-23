@@ -21,6 +21,7 @@
 #include "FairLogger.h" // for LOG
 #include "Framework/Logger.h"
 #include "Headers/RAWDataHeader.h"
+#include "HMPIDReconstruction/HmpidEquipment.h"
 #include "HMPIDReconstruction/HmpidDecoder2.h"
 #include "DataFormatsHMP/Digit.h"
 
@@ -37,10 +38,12 @@ char HmpidDecoder2::sErrorDescription[MAXERRORS][MAXDESCRIPTIONLENGHT] = {"Word 
 
 /// HMPID Firmware Error Messages Definitions
 char HmpidDecoder2::sHmpidErrorDescription[MAXHMPIDERRORS][MAXDESCRIPTIONLENGHT] = {
-  "L0 Missing,"
+  "L0 Missing",
   "L1 is received without L0",
-  "L1A signal arrived before the L1 Latency", "L1A signal arrived after the L1 Latency",
-  "L1A is missing or L1 timeout", "L1A Message is missing or L1 Message"};
+  "L1A signal arrived before the L1 Latency",
+  "L1A signal arrived after the L1 Latency",
+  "L1A is missing or L1 timeout",
+  "L1A Message is missing or L1 Message"};
 
 /// Constructor : accepts the number of equipments to define
 ///               The mapping is the default at P2
@@ -283,9 +286,12 @@ bool HmpidDecoder2::isPadWord(uint32_t wp, int* Err, int* Col, int* Dilogic, int
   *Dilogic = (wp & 0x003C0000) >> 18;
   *Channel = (wp & 0x0003F000) >> 12;
   *Charge = (wp & 0x00000FFF);
+  uint16_t mark, row;
+  mark = wp & 0x0ffff;
+  row = (wp & 0x03ff0000) >> 16;
 
-  if ((wp & 0x0ffff) == 0x036A8 || (wp & 0x0ffff) == 0x032A8 || (wp & 0x0ffff) == 0x030A0 || (wp & 0x0ffff) == 0x010A0) { //  # ! this is a pad
-    if (*Dilogic > 10 || *Channel > 47 || *Dilogic < 1 || *Col > 24 || *Col < 1) {
+  if (mark == 0x036A8 || mark == 0x032A8 || mark == 0x030A0 || mark == 0x010A0) { //  # ! this is a pad
+    if (*Dilogic > 10 || *Channel > 47 || *Dilogic < 1 || *Col > 24 || *Col < 1 || row <= 490 || row > 10) {
       return (false);
     }
   } else {
@@ -453,7 +459,10 @@ void HmpidDecoder2::updateStatistics(HmpidEquipment* eq)
 /// @returns the Pointer to the modified Equipment object
 HmpidEquipment* HmpidDecoder2::evaluateHeaderContents(int EquipmentIndex)
 {
-  //std::cout << "Enter evaluateHeaderContents..";
+  if(EquipmentIndex <0 || EquipmentIndex > 13) {
+     std::cout << "Enter evaluateHeaderContents.." << EquipmentIndex << std::endl;
+     exit;
+  }
   HmpidEquipment* eq = mTheEquipments[EquipmentIndex];
   if (mHeEvent != eq->mEventNumber) {              // Is a new event
     if (eq->mEventNumber != OUTRANGEEVENTNUMBER) { // skip the first
@@ -826,7 +835,8 @@ void HmpidDecoder2::decodePageFast(uint32_t** streamBuf)
   while (payIndex < mNumberWordToRead) { //start the payload loop word by word
     wpprev = wp;
     if (!getWordFromStream(&wp)) { // end the stream
-      break;
+      //mPayloadTail = 0;
+      throw TH_BUFFEREMPTY;
     }
     if (wp == wpprev) {
       HLOG_DEBUG << "Equip=" << mEquipment << sErrorDescription[ERR_DUPLICATEPAD] << " col=" << (eq->mSegment) * 8 + eq->mColumnCounter << "[" << Column << "]" << std::endl;
@@ -841,7 +851,9 @@ void HmpidDecoder2::decodePageFast(uint32_t** streamBuf)
     payIndex += 1;
   }
   for (int i = 0; i < mPayloadTail; i++) { // move the pointer to skip the Payload Tail
-    getWordFromStream(&wp);
+    if(!getWordFromStream(&wp)) {
+      throw TH_BUFFEREMPTY;
+    }
   }
   *streamBuf = mActualStreamPtr;
   return;
@@ -858,10 +870,8 @@ bool HmpidDecoder2::decodeBufferFast()
     mTheEquipments[i]->init();
     mTheEquipments[i]->resetPadMap();
   }
-
   uint32_t* streamBuf = mStartStreamPtr;
   HLOG_INFO << "Enter FAST decoding !" << std::endl;
-
   // Input Stream Main Loop
   while (true) {
     try {
@@ -1058,7 +1068,7 @@ void HmpidDecoder2::dumpPads(int EquipmId, int type)
 /// @param[in] ErrorField : the HMPID readout error field
 void HmpidDecoder2::dumpHmpidError(int ErrorField)
 {
-  char printbuf[MAXHMPIDERRORS * MAXDESCRIPTIONLENGHT];
+  char printbuf[MAXHMPIDERRORS * MAXDESCRIPTIONLENGHT + 255];
   if (decodeHmpidError(ErrorField, printbuf) == true) {
     HLOG_ERROR << "HMPID Error field = " << ErrorField << " : " << printbuf << std::endl;
   }
@@ -1162,9 +1172,9 @@ bool HmpidDecoder2::getBlockFromStream(uint32_t** streamPtr, uint32_t Size)
   *streamPtr = mActualStreamPtr;
   mActualStreamPtr += Size;
   if (mActualStreamPtr > mEndStreamPtr) {
-    //    std::cout << " getBlockFromStream : StPtr=" << mActualStreamPtr << " EndPtr=" << mEndStreamPtr << " Len=" << Size << std::endl;
-    //    std::cout << "Beccato " << std::endl;
-    //    throw TH_WRONGBUFFERDIM;
+//    std::cout << " getBlockFromStream : StPtr=" << mActualStreamPtr << " EndPtr=" << mEndStreamPtr << " Len=" << Size << std::endl;
+//    std::cout << "Beccato " << std::endl;
+    throw TH_WRONGBUFFERDIM;
     return (false);
   }
   return (true);
@@ -1184,8 +1194,11 @@ bool HmpidDecoder2::getHeaderFromStream(uint32_t** streamPtr)
 bool HmpidDecoder2::getWordFromStream(uint32_t* word)
 {
   uint32_t* appo;
-  *word = *mActualStreamPtr;
-  return (getBlockFromStream(&appo, 1));
+  if(getBlockFromStream(&appo, 1)) {
+    *word = *mActualStreamPtr;
+    return(true);
+  }
+  return (false);
 }
 
 /// Setup the Input Stream with a Memory Pointer

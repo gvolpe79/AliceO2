@@ -57,6 +57,7 @@ class RawToDigitsTask : public framework::Task
     long mFramesReceived;
     long mTotalDigits;
     long mTotalFrames;
+    bool mFastAlgorithm;
 
     ExecutionTimer mExTimer;
   };

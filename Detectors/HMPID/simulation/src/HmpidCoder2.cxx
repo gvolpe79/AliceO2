@@ -187,6 +187,7 @@ void HmpidCoder2::writePaginatedEvent(uint32_t orbit, uint16_t bc)
                       {bc, orbit},
                       gsl::span<char>(reinterpret_cast<char*>(ptrStartEquipment),
                                       EventSize * sizeof(uint32_t)),
+                      false,
                       (uint32_t)((mBusyTime << 9) | ((mHmpidErrorFlag & 0x01F) << 4) | (mHmpidFrwVersion & 0x0F)));
       // We fill the fields !
       // TODO: we can fill the detector field with Simulated Data
@@ -215,8 +216,6 @@ void HmpidCoder2::codeEventChunkDigits(std::vector<o2::hmpid::raw::Digit>& digit
   LOG(DEBUG) << "Manage chunk Orbit :" << orbit << " BC:" << bc << "  Digits size:" << digits.size();
   for (o2::hmpid::raw::Digit d : digits) {
     Digit::pad2Equipment(d.getPadID(), &eq, &col, &dil, &cha); // From Digit to Hardware coords
-    if (eq == 13 && col == 1 && dil == 2 && cha == 5) {
-    }
     eq = ReadOut::FeeId(eq);                       // converts the Equipment Id in Cru/Link position ref
     idx = getEquipmentPadIndex(eq, col, dil, cha); // finally to the unique padmap index
     if (mPadMap[idx] != 0) {                       // We already have the pad set
