@@ -130,7 +130,7 @@ void RawToDigitsTask::run(framework::ProcessingContext& pc)
         mDecod->setUpStream(ptrBuffer, zs);
         while(ptrBuffer<ptrBufferEnd){
           try {
-            if(mFastAlgorithm) {
+            if (mFastAlgorithm) {
               mDecod->decodePageFast(&ptrBuffer);
             } else {
               mDecod->decodePage(&ptrBuffer);
@@ -190,7 +190,7 @@ void RawToDigitsTask::parseNoTF()
     mDecod->setUpStream(ptrBuffer, sz);
     while(ptrBuffer<ptrBufferEnd){
       try {
-        if(mFastAlgorithm) {
+        if (mFastAlgorithm) {
           mDecod->decodePageFast(&ptrBuffer);
         } else {
           mDecod->decodePage(&ptrBuffer);

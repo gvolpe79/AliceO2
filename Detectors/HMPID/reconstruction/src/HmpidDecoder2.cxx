@@ -459,9 +459,9 @@ void HmpidDecoder2::updateStatistics(HmpidEquipment* eq)
 /// @returns the Pointer to the modified Equipment object
 HmpidEquipment* HmpidDecoder2::evaluateHeaderContents(int EquipmentIndex)
 {
-  if(EquipmentIndex <0 || EquipmentIndex > 13) {
-     std::cout << "Enter evaluateHeaderContents.." << EquipmentIndex << std::endl;
-     exit;
+  if (EquipmentIndex < 0 || EquipmentIndex > 13) {
+    std::cout << "Enter evaluateHeaderContents.." << EquipmentIndex << std::endl;
+    exit;
   }
   HmpidEquipment* eq = mTheEquipments[EquipmentIndex];
   if (mHeEvent != eq->mEventNumber) {              // Is a new event
@@ -851,7 +851,7 @@ void HmpidDecoder2::decodePageFast(uint32_t** streamBuf)
     payIndex += 1;
   }
   for (int i = 0; i < mPayloadTail; i++) { // move the pointer to skip the Payload Tail
-    if(!getWordFromStream(&wp)) {
+    if (!getWordFromStream(&wp)) {
       throw TH_BUFFEREMPTY;
     }
   }
@@ -1172,8 +1172,8 @@ bool HmpidDecoder2::getBlockFromStream(uint32_t** streamPtr, uint32_t Size)
   *streamPtr = mActualStreamPtr;
   mActualStreamPtr += Size;
   if (mActualStreamPtr > mEndStreamPtr) {
-//    std::cout << " getBlockFromStream : StPtr=" << mActualStreamPtr << " EndPtr=" << mEndStreamPtr << " Len=" << Size << std::endl;
-//    std::cout << "Beccato " << std::endl;
+    //    std::cout << " getBlockFromStream : StPtr=" << mActualStreamPtr << " EndPtr=" << mEndStreamPtr << " Len=" << Size << std::endl;
+    //    std::cout << "Beccato " << std::endl;
     throw TH_WRONGBUFFERDIM;
     return (false);
   }
@@ -1194,9 +1194,9 @@ bool HmpidDecoder2::getHeaderFromStream(uint32_t** streamPtr)
 bool HmpidDecoder2::getWordFromStream(uint32_t* word)
 {
   uint32_t* appo;
-  if(getBlockFromStream(&appo, 1)) {
+  if (getBlockFromStream(&appo, 1)) {
     *word = *mActualStreamPtr;
-    return(true);
+    return (true);
   }
   return (false);
 }

@@ -231,7 +231,7 @@ void PedestalsCalculationTask::decodeTF(framework::ProcessingContext& pc)
     uint32_t* theBuffer = (uint32_t*)it.raw();
     mDeco->setUpStream(theBuffer, it.size() + it.offset());
     try {
-      if(mFastAlgorithm) {
+      if (mFastAlgorithm) {
         mDeco->decodePageFast(&theBuffer);
       } else {
         mDeco->decodePage(&theBuffer);
@@ -261,7 +261,7 @@ void PedestalsCalculationTask::decodeReadout(framework::ProcessingContext& pc)
     uint32_t* theBuffer = (uint32_t*)it.raw();
     mDeco->setUpStream(theBuffer, it.size() + it.offset());
     try {
-      if(mFastAlgorithm) {
+      if (mFastAlgorithm) {
         mDeco->decodePageFast(&theBuffer);
       } else {
         mDeco->decodePage(&theBuffer);
@@ -298,7 +298,7 @@ void PedestalsCalculationTask::decodeRawFile(framework::ProcessingContext& pc)
       int pagesize = header->payloadSize;
       mDeco->setUpStream(theBuffer, pagesize);
       try {
-        if(mFastAlgorithm) {
+        if (mFastAlgorithm) {
           mDeco->decodePageFast(&theBuffer);
         } else {
           mDeco->decodePage(&theBuffer);
