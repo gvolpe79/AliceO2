@@ -8,10 +8,20 @@
 # granted to it by virtue of its status as an Intergovernmental Organization or
 # submit itself to any jurisdiction.
 
-# o2_add_library(DataFormatsHMP
-#               SOURCES src/Cluster.cxx
-#               PUBLIC_LINK_LIBRARIES O2::ReconstructionDataFormats
-#                                     Boost::serialization)
+o2_add_library(DataFormatsHMP
+               SOURCES src/CalibInfoHMPIDshort.cxx
+                       src/CalibInfoHMPID.cxx
+                       src/CalibLHCphaseHMPID.cxx
+                       src/CalibTimeSlewingParamHMPID.cxx
+                       src/CalibInfoCluster.cxx
+               PUBLIC_LINK_LIBRARIES O2::ReconstructionDataFormats
+                                     Boost::serialization)
 
-# o2_target_root_dictionary(DataFormatsHMP
-#                          HEADERS include/DataFormatsHMP/DataFormat.h
+o2_target_root_dictionary(DataFormatsHMP
+                          HEADERS include/DataFormatsHMP/CalibInfoHMPIDshort.h
+                                  include/DataFormatsHMP/CalibInfoHMPID.h
+                                  include/DataFormatsHMP/CalibLHCphaseHMPID.h
+                                  include/DataFormatsHMP/CalibTimeSlewingParamHMPID.h
+                                  include/DataFormatsHMP/DataFormat.h
+                                  include/DataFormatsHMP/CalibInfoCluster.h
+				  )

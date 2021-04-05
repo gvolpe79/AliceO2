@@ -13,8 +13,8 @@
 
 #include "DetectorsCalibration/TimeSlotCalibration.h"
 #include "DetectorsCalibration/TimeSlot.h"
-#include "DataFormatsHMPID/CalibInfoHMPID.h"
-#include "DataFormatsHMPID/CalibLHCphaseHMPID.h"
+#include "DataFormatsHMP/CalibInfoHMPID.h"
+#include "DataFormatsHMP/CalibLHCphaseHMPID.h"
 #include "HMPIDBase/Geo.h"
 #include "CCDB/CcdbObjectInfo.h"
 #include "HMPIDCalibration/CalibHMPIDapi.h"

@@ -14,7 +14,7 @@
 
 #include "DetectorsCalibration/TimeSlotCalibration.h"
 #include "DetectorsCalibration/TimeSlot.h"
-#include "DataFormatsHMPID/CalibInfoHMPID.h"
+#include "DataFormatsHMP/CalibInfoHMPID.h"
 #include "HMPIDBase/Geo.h"
 #include "DataFormatsHMPID/CalibInfoHMPIDshort.h"
 
