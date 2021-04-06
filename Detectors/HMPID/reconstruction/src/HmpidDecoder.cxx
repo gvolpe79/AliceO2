@@ -465,7 +465,7 @@ HmpidEquipment* HmpidDecoder::evaluateHeaderContents(int EquipmentIndex)
     eq->mEventSize = 0; // reset the event
     eq->mSampleNumber = 0;
     eq->mErrorsCounter = 0;
-    mIntReco = {  (uint16_t)mHeBCDI , (uint32_t)mHeORBIT};
+    mIntReco = {(uint16_t)mHeBCDI, (uint32_t)mHeORBIT};
   }
   eq->mEventSize += mNumberWordToRead * sizeof(uint32_t); // Calculate the size in bytes
   if (mHeHmpidError != 0) {
@@ -873,7 +873,7 @@ bool HmpidDecoder::decodeBufferFast()
 uint16_t HmpidDecoder::getPadSamples(int Module, int Row, int Column)
 {
   int e, c, d, h;
-  o2::hmpid::raw::Digit::absolute2Equipment(Module, Row, Column, &e, &c, &d, &h);
+  o2::hmpid::Digit::absolute2Equipment(Module, Row, Column, &e, &c, &d, &h);
   int EqInd = getEquipmentIndex(e);
   if (EqInd < 0) {
     return (0);
@@ -889,7 +889,7 @@ uint16_t HmpidDecoder::getPadSamples(int Module, int Row, int Column)
 double HmpidDecoder::getPadSum(int Module, int Row, int Column)
 {
   int e, c, d, h;
-  o2::hmpid::raw::Digit::absolute2Equipment(Module, Row, Column, &e, &c, &d, &h);
+  o2::hmpid::Digit::absolute2Equipment(Module, Row, Column, &e, &c, &d, &h);
   int EqInd = getEquipmentIndex(e);
   if (EqInd < 0) {
     return (0);
@@ -905,7 +905,7 @@ double HmpidDecoder::getPadSum(int Module, int Row, int Column)
 double HmpidDecoder::getPadSquares(int Module, int Row, int Column)
 {
   int e, c, d, h;
-  o2::hmpid::raw::Digit::absolute2Equipment(Module, Row, Column, &e, &c, &d, &h);
+  o2::hmpid::Digit::absolute2Equipment(Module, Row, Column, &e, &c, &d, &h);
   int EqInd = getEquipmentIndex(e);
   if (EqInd < 0) {
     return (0);
