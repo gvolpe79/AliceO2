@@ -8,11 +8,11 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-/// \file CalibLHCphaseTOF.h
-/// \brief Class to store the output of the matching to TOF for calibration
+/// \file CalibLHCphaseHMPID.h
+/// \brief Class to store the output of the matching to HMPID for calibration
 
-#ifndef ALICEO2_CALIBLHCPHASETOF_H
-#define ALICEO2_CALIBLHCPHASETOF_H
+#ifndef ALICEO2_CALIBLHCPHASEHMPID_H
+#define ALICEO2_CALIBLHCPHASEHMPID_H
 
 #include <vector>
 #include "Rtypes.h"
@@ -21,10 +21,10 @@ namespace o2
 {
 namespace dataformats
 {
-class CalibLHCphaseTOF
+class CalibLHCphaseHMPID
 {
  public:
-  CalibLHCphaseTOF() = default;
+  CalibLHCphaseHMPID() = default;
 
   float getLHCphase(int timestamp) const;
 
@@ -34,13 +34,13 @@ class CalibLHCphaseTOF
   int timestamp(int i) const { return mLHCphase[i].first; }
   float LHCphase(int i) const { return mLHCphase[i].second; }
 
-  CalibLHCphaseTOF& operator+=(const CalibLHCphaseTOF& other);
+  CalibLHCphaseHMPID& operator+=(const CalibLHCphaseHMPID& other);
 
  private:
   // LHCphase calibration
   std::vector<std::pair<int, float>> mLHCphase; ///< <timestamp,LHCphase> from which the LHCphase measurement is valid
 
-  ClassDefNV(CalibLHCphaseTOF, 1);
+  ClassDefNV(CalibLHCphaseHMPID, 1);
 };
 } // namespace dataformats
 } // namespace o2

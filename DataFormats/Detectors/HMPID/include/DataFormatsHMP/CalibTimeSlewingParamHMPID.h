@@ -8,11 +8,11 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-/// \file CalibTimeSlewingParamTOF.h
-/// \brief Class to store the output of the matching to TOF for calibration
+/// \file CalibTimeSlewingParamHMPID.h
+/// \brief Class to store the output of the matching to HMPID for calibration
 
-#ifndef ALICEO2_CALIBTIMESLEWINGPARAMTOF_H
-#define ALICEO2_CALIBTIMESLEWINGPARAMTOF_H
+#ifndef ALICEO2_CALIBTIMESLEWINGPARAMHMPID_H
+#define ALICEO2_CALIBTIMESLEWINGPARAMHMPID_H
 
 #include <vector>
 #include <array>
@@ -22,18 +22,18 @@ namespace o2
 {
 namespace dataformats
 {
-class CalibTimeSlewingParamTOF
+class CalibTimeSlewingParamHMPID
 {
  public:
   static const int NCHANNELS = 157248;                     //
   static const int NSECTORS = 18;                          //
   static const int NCHANNELXSECTOR = NCHANNELS / NSECTORS; //
 
-  CalibTimeSlewingParamTOF();
+  CalibTimeSlewingParamHMPID();
 
-  CalibTimeSlewingParamTOF(const CalibTimeSlewingParamTOF& source) = default;
+  CalibTimeSlewingParamHMPID(const CalibTimeSlewingParamHMPID& source) = default;
 
-  CalibTimeSlewingParamTOF& operator=(const CalibTimeSlewingParamTOF& source) = default;
+  CalibTimeSlewingParamHMPID& operator=(const CalibTimeSlewingParamHMPID& source) = default;
 
   float getChannelOffset(int channel) const;
 
@@ -77,17 +77,17 @@ class CalibTimeSlewingParamTOF
     return (getFractionUnderPeak(sector, channelInSector) < 0);
   }
 
-  CalibTimeSlewingParamTOF& operator+=(const CalibTimeSlewingParamTOF& other);
+  CalibTimeSlewingParamHMPID& operator+=(const CalibTimeSlewingParamHMPID& other);
 
  private:
-  // TOF channel calibrations
+  // HMPID channel calibrations
   std::array<std::array<int, NCHANNELXSECTOR>, NSECTORS> mChannelStart;             ///< array with the index of the first element of a channel in the time slewing vector (per sector)
   std::array<std::array<float, NCHANNELXSECTOR>, NSECTORS> mGlobalOffset;           ///< array with the sigma of the peak
   std::array<std::vector<std::pair<unsigned short, short>>, NSECTORS> mTimeSlewing; ///< array of sector vectors; first element of the pair is TOT (in ps), second is t-texp_pi (in ps)
   std::array<std::array<float, NCHANNELXSECTOR>, NSECTORS> mFractionUnderPeak;      ///< array with the fraction of entries below the peak
   std::array<std::array<float, NCHANNELXSECTOR>, NSECTORS> mSigmaPeak;              ///< array with the sigma of the peak
 
-  ClassDefNV(CalibTimeSlewingParamTOF, 2); // class for TOF time slewing params
+  ClassDefNV(CalibTimeSlewingParamHMPID, 2); // class for HMPID time slewing params
 };
 } // namespace dataformats
 } // namespace o2

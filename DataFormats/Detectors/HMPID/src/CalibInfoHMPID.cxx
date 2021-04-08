@@ -8,8 +8,8 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-/// \file CalibInfoTOF.cxx
-/// \brief Class to store the output of the matching to TOF for calibration
+/// \file CalibInfoHMPID.cxx
+/// \brief Class to store the output of the matching to HMPID for calibration
 
 #include "DataFormatsHMP/CalibInfoHMPID.h"
 

@@ -8,8 +8,8 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-/// \file CalibTimeSlewingParamTOF.cxx
-/// \brief Class to store the output of the matching to TOF for calibration
+/// \file CalibTimeSlewingParamHMPID.cxx
+/// \brief Class to store the output of the matching to HMPID for calibration
 
 #include <algorithm>
 #include <cstdio>
@@ -90,7 +90,7 @@ float CalibTimeSlewingParamHMPID::evalTimeSlewing(int channel, float totIn) cons
 }
 //______________________________________________
 
-void CalibTimeSlewingParamTOF::addTimeSlewingInfo(int channel, float tot, float time)
+void CalibTimeSlewingParamHMPID::addTimeSlewingInfo(int channel, float tot, float time)
 {
   // WE ARE ASSUMING THAT:
   // channels have to be filled in increasing order (within the sector)
@@ -150,7 +150,7 @@ bool CalibTimeSlewingParamHMPID::updateOffsetInfo(int channel, float residualOff
   return true;
 }
 //______________________________________________
-CalibTimeSlewingParamHMPID& CalibTimeSlewingParamHMPID::operator+=(const CalibTimeSlewingParamTOF& other)
+CalibTimeSlewingParamHMPID& CalibTimeSlewingParamHMPID::operator+=(const CalibTimeSlewingParamHMPID& other)
 {
   for (int i = 0; i < NSECTORS; i++) {
     if (other.mTimeSlewing[i].size() > mTimeSlewing[i].size()) {

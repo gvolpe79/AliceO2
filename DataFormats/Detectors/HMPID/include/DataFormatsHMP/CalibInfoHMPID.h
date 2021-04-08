@@ -8,8 +8,8 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-/// \file CalibInfoTOF.h
-/// \brief Class to store the output of the matching to TOF for calibration
+/// \file CalibInfoHMPID.h
+/// \brief Class to store the output of the matching to HMPID for calibration
 
 #ifndef ALICEO2_CALIBINFOHMPID_H
 #define ALICEO2_CALIBINFOHMPID_H
@@ -23,12 +23,12 @@ namespace dataformats
 class CalibInfoHMPID
 {
  public:
-  CalibInfoHMPID(int indexTOFCh, int timestamp, float DeltaTimePi, float tot, int flags = 0) : mTOFChIndex(indexHMPIDCh), mTimestamp(timestamp), mDeltaTimePi(DeltaTimePi), mTot(tot), mFlags(flags){};
+  CalibInfoHMPID(int indexHMPIDCh, int timestamp, float DeltaTimePi, float tot, int flags = 0) : mHMPIDChIndex(indexHMPIDCh), mTimestamp(timestamp), mDeltaTimePi(DeltaTimePi), mTot(tot), mFlags(flags){};
   CalibInfoHMPID() = default;
   ~CalibInfoHMPID() = default;
 
-  void setHMPIDChIndex(int index) { mTOFChIndex = index; }
-  int getHMPIDChIndex() const { return mTOFChIndex; }
+  void setHMPIDChIndex(int index) { mHMPIDChIndex = index; }
+  int getHMPIDChIndex() const { return mHMPIDChIndex; }
 
   void setTimestamp(int ts) { mTimestamp = ts; }
   int getTimestamp() const { return mTimestamp; }
@@ -43,9 +43,9 @@ class CalibInfoHMPID
   float getFlags() const { return mFlags; }
 
  private:
-  int mHMPIDChIndex;      // index of the TOF channel
+  int mHMPIDChIndex;      // index of the HMPID channel
   int mTimestamp;       // timestamp in seconds
-  float mDeltaTimePi;   // raw tof time - expected time for pi hypotesis
+  float mDeltaTimePi;   // raw HMPID time - expected time for pi hypotesis
   float mTot;           // time-over-threshold
   unsigned char mFlags; // bit mask with quality flags (to be defined)
 

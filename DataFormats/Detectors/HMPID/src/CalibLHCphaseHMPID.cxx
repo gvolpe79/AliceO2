@@ -8,8 +8,8 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-/// \file CalibLHCphaseTOF.cxx
-/// \brief Class to store the output of the matching to TOF for calibration
+/// \file CalibLHCphaseHMPID.cxx
+/// \brief Class to store the output of the matching to HMPID for calibration
 
 #include <algorithm>
 #include <cstdio>
@@ -17,7 +17,7 @@
 
 using namespace o2::dataformats;
 
-//ClassImp(o2::dataformats::CalibLHCphaseTOF);
+//ClassImp(o2::dataformats::CalibLHCphaseHMPID);
 
 float CalibLHCphaseHMPID::getLHCphase(int timestamp) const
 {
@@ -48,7 +48,7 @@ void CalibLHCphaseHMPID::addLHCphase(int timestamp, float phaseLHC)
 }
 //______________________________________________
 
-CalibLHCphaseHMPID& CalibLHCphaseHMPID::operator+=(const CalibLHCphaseTOF& other)
+CalibLHCphaseHMPID& CalibLHCphaseHMPID::operator+=(const CalibLHCphaseHMPID& other)
 {
   if (other.mLHCphase.size() > mLHCphase.size()) {
     mLHCphase.clear();

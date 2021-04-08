@@ -9,8 +9,8 @@
 // or submit itself to any jurisdiction.
 
 /// \file CalibInfoCluster.cxx
-/// \brief Implementation of the TOF cluster calib info
+/// \brief Implementation of the HMPID cluster calib info
 
-#include "DataFormatsTOF/CalibInfoCluster.h"
+#include "DataFormatsHMP/CalibInfoCluster.h"
 
-ClassImp(o2::tof::CalibInfoCluster);
+ClassImp(o2::hmpid::CalibInfoCluster);

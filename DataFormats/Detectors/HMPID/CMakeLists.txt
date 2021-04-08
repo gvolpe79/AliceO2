@@ -15,6 +15,8 @@ o2_add_library(DataFormatsHMP
                        src/CalibTimeSlewingParamHMPID.cxx
                        src/CalibInfoCluster.cxx
                PUBLIC_LINK_LIBRARIES O2::ReconstructionDataFormats
+				     O2::HMPIDBase
+				     O2::CommonDataFormat
                                      Boost::serialization)
 
 o2_target_root_dictionary(DataFormatsHMP

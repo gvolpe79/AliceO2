@@ -16,7 +16,7 @@
 #include "DetectorsCalibration/TimeSlot.h"
 #include "DataFormatsHMP/CalibInfoHMPID.h"
 #include "HMPIDBase/Geo.h"
-#include "DataFormatsHMPID/CalibInfoHMPIDshort.h"
+#include "DataFormatsHMP/CalibInfoHMPIDshort.h"
 
 #include <array>
 
@@ -45,37 +45,37 @@ class HMPIDCalibInfoSlot
 
   void print() const;
   void printEntries() const;
-  void fill(const gsl::span<const o2::dataformats::CalibInfoTOF> data);
+  void fill(const gsl::span<const o2::dataformats::CalibInfoHMPID> data);
   void merge(const HMPIDCalibInfoSlot* prev);
 
   auto& getEntriesPerChannel() const { return mEntriesSlot; }
   auto& getEntriesPerChannel() { return mEntriesSlot; }
-  auto& getCollectedCalibInfoSlot() { return mTOFCollectedCalibInfoSlot; }
-  auto& getCollectedCalibInfoSlot() const { return mTOFCollectedCalibInfoSlot; }
+  auto& getCollectedCalibInfoSlot() { return mHMPIDCollectedCalibInfoSlot; }
+  auto& getCollectedCalibInfoSlot() const { return mHMPIDCollectedCalibInfoSlot; }
 
  private:
   std::array<int, Geo::NCHANNELS> mEntriesSlot;                               // vector containing number of entries per channel
-  std::vector<o2::dataformats::CalibInfoTOFshort> mTOFCollectedCalibInfoSlot; ///< output TOF calibration info
+  std::vector<o2::dataformats::CalibInfoHMPIDshort> mHMPIDCollectedCalibInfoSlot; ///< output HMPID calibration info
 
-  ClassDefNV(TOFCalibInfoSlot, 1);
+  ClassDefNV(HMPIDCalibInfoSlot, 1);
 };
 
-class TOFCalibCollector final : public o2::calibration::TimeSlotCalibration<o2::dataformats::CalibInfoTOF, o2::tof::TOFCalibInfoSlot>
+class HMPIDCalibCollector final : public o2::calibration::TimeSlotCalibration<o2::dataformats::CalibInfoHMPID, o2::hmpid::HMPIDCalibInfoSlot>
 {
   using TFType = uint64_t;
-  using Slot = o2::calibration::TimeSlot<o2::tof::TOFCalibInfoSlot>;
+  using Slot = o2::calibration::TimeSlot<o2::hmpid::HMPIDCalibInfoSlot>;
 
  public:
-  TOFCalibCollector(bool TFsendingPolicy, int maxNumOfHits, bool test = false) : mTFsendingPolicy(TFsendingPolicy), mMaxNumOfHits(maxNumOfHits), mTest(test){};
+  HMPIDCalibCollector(bool TFsendingPolicy, int maxNumOfHits, bool test = false) : mTFsendingPolicy(TFsendingPolicy), mMaxNumOfHits(maxNumOfHits), mTest(test){};
 
-  ~TOFCalibCollector() final = default;
+  ~HMPIDCalibCollector() final = default;
 
   bool hasEnoughData(const Slot& slot) const final;
   void initOutput() final;
   void finalizeSlot(Slot& slot) final;
   Slot& emplaceNewSlot(bool front, TFType tstart, TFType tend) final;
   void setIsTest(bool istest) { mTest = istest; }
-  auto& getCollectedCalibInfo() const { return mTOFCollectedCalibInfo; }
+  auto& getCollectedCalibInfo() const { return mHMPIDCollectedCalibInfo; }
   auto& getEntriesPerChannel() const { return mEntries; }
   void setIsMaxNumberOfHitsAbsolute(bool absNumber) { mAbsMaxNumOfHits = absNumber; }
 
@@ -83,15 +83,15 @@ class TOFCalibCollector final : public o2::calibration::TimeSlotCalibration<o2::
   bool mTFsendingPolicy = false;                                          // whether we will send information at every TF or only when we have a certain statistics
   int mMaxNumOfHits = 500;                                                // maximum number of hits for one single channel to trigger the sending of the information (if mTFsendingPolicy = false)
   bool mTest = false;                                                     // flag to say whether we are in test mode or not
-  bool mAbsMaxNumOfHits = true;                                           // to decide if the mMaxNumOfHits should be multiplied by the number of TOF channels
+  bool mAbsMaxNumOfHits = true;                                           // to decide if the mMaxNumOfHits should be multiplied by the number of HMPID channels
   std::array<int, Geo::NCHANNELS> mEntries;                               // vector containing number of entries per channel
-  std::vector<o2::dataformats::CalibInfoTOFshort> mTOFCollectedCalibInfo; ///< output TOF calibration info
+  std::vector<o2::dataformats::CalibInfoHMPIDshort> mHMPIDCollectedCalibInfo; ///< output HMPID calibration info
 
-  ClassDefOverride(TOFCalibCollector, 1);
+  ClassDefOverride(HMPIDCalibCollector, 1);
 };
 
-} // end namespace tof
+} // end namespace hmpid
 } // end namespace o2
 
-#endif /* TOF_CHANNEL_CALIBRATOR_H_ */
+#endif /* HMPID_CHANNEL_CALIBRATOR_H_ */
 

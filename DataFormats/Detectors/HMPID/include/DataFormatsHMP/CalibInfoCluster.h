@@ -9,20 +9,20 @@
 // or submit itself to any jurisdiction.
 
 /// \file Cluster.h
-/// \brief Definition of the TOF cluster
+/// \brief Definition of the HMPID cluster
 
-#ifndef ALICEO2_TOF_CLUSTERCALINFOCLASS_H
-#define ALICEO2_TOF_CLUSTERCALINFOCLASS_H
+#ifndef ALICEO2_HMPID_CLUSTERCALINFOCLASS_H
+#define ALICEO2_HMPID_CLUSTERCALINFOCLASS_H
 
 #include <vector>
 #include "Rtypes.h"
 
 namespace o2
 {
-namespace tof
+namespace hmpid
 {
 /// \class CalibInfoCluster
-/// \brief CalibInfoCluster for TOF
+/// \brief CalibInfoCluster for HMPID
 ///
 class CalibInfoCluster
 {
@@ -43,7 +43,7 @@ class CalibInfoCluster
   CalibInfoCluster(int ich, int8_t ideltach, float dt, short t1, short t2) : ch(ich), deltach(ideltach), deltat(dt), tot1(t1), tot2(t2) {}
   ClassDefNV(CalibInfoCluster, 1);
 };
-} // namespace tof
+} // namespace hmpid
 
 } // namespace o2
 
