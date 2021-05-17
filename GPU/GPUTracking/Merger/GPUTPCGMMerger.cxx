@@ -49,7 +49,7 @@
 #include "GPUTPCGMSliceTrack.h"
 #include "GPUTPCGMBorderTrack.h"
 
-#ifdef HAVE_O2HEADERS
+#ifdef GPUCA_HAVE_O2HEADERS
 #include "DataFormatsTPC/ClusterNative.h"
 #include "DataFormatsTPC/TrackTPC.h"
 #ifndef GPUCA_GPUCODE
@@ -456,6 +456,7 @@ GPUd() int GPUTPCGMMerger::RefitSliceTrack(GPUTPCGMSliceTrack& sliceTrack, const
   trk.QPt() = inTrack->Param().GetQPt();
   trk.TZOffset() = Param().par.earlyTpcTransform ? inTrack->Param().GetZOffset() : GetConstantMem()->calibObjects.fastTransform->convZOffsetToVertexTime(slice, inTrack->Param().GetZOffset(), Param().par.continuousMaxTimeBin);
   trk.ShiftZ(this, slice, sliceTrack.ClusterZT0(), sliceTrack.ClusterZTN());
+  sliceTrack.SetX2(0.f);
   for (int way = 0; way < 2; way++) {
     if (way) {
       prop.SetFitInProjections(true);
@@ -509,7 +510,6 @@ GPUd() int GPUTPCGMMerger::RefitSliceTrack(GPUTPCGMSliceTrack& sliceTrack, const
       sliceTrack.SetParam2(trk);
     } else {
       sliceTrack.Set(trk, inTrack, alpha, slice);
-      sliceTrack.SetX2(0.f);
     }
   }
   return 0;
