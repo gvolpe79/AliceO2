@@ -451,7 +451,6 @@ void DataRequest::requestEMCALCells(bool mc)
   requestMap["EMCCells"] = mc;
 }
 
-
 void DataRequest::requestHMPMatches(bool mc)
 {
   addInput({"matchHMP", "HMP", "MATCHES", 0, Lifetime::Timeframe});
@@ -460,7 +459,6 @@ void DataRequest::requestHMPMatches(bool mc)
   }
   requestMap["matchHMP"] = mc;
 }
-
 
 void DataRequest::requestTracks(GTrackID::mask_t src, bool useMC)
 {
@@ -1000,7 +998,6 @@ void RecoContainer::addTOFMatchesITSTPCTRD(ProcessingContext& pc, bool mc)
     commonPool[GTrackID::ITSTPCTRDTOF].registerContainer(pc.inputs().get<gsl::span<o2::MCCompLabel>>("clsTOF_GLO3_MCTR"), MCLABELS);
   }
 }
-
 
 //__________________________________________________________
 void RecoContainer::addHMPMatches(ProcessingContext& pc, bool mc)
