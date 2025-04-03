@@ -30,8 +30,9 @@ TrackerDPL::TrackerDPL(std::shared_ptr<o2::base::GRPGeomRequest> gr,
                        const bool overrBeamEst,
                        o2::gpu::GPUDataTypes::DeviceType dType) : mGGCCDBRequest(gr),
                                                                   mRecChain{o2::gpu::GPUReconstruction::CreateInstance(dType, true)},
-                                                                  mITSTrackingInterface{isMC, trgType, trMode, overrBeamEst}
+                                                                  mITSTrackingInterface{isMC, trgType, overrBeamEst}
 {
+  mITSTrackingInterface.setTrackingMode(trMode);
 }
 
 void TrackerDPL::init(InitContext& ic)
@@ -43,7 +44,6 @@ void TrackerDPL::init(InitContext& ic)
   mITSTrackingInterface.setTraitsFromProvider(mChainITS->GetITSVertexerTraits(),
                                               mChainITS->GetITSTrackerTraits(),
                                               mChainITS->GetITSTimeframe());
-  mITSTrackingInterface.initialise();
 }
 
 void TrackerDPL::stop()
@@ -113,6 +113,7 @@ DataProcessorSpec getTrackerSpec(bool useMC, bool useGeom, int trgType, const st
     inputs.emplace_back("itsmclabels", "ITS", "CLUSTERSMCTR", 0, Lifetime::Timeframe);
     inputs.emplace_back("ITSMC2ROframes", "ITS", "CLUSTERSMC2ROF", 0, Lifetime::Timeframe);
     outputs.emplace_back("ITS", "VERTICESMCTR", 0, Lifetime::Timeframe);
+    outputs.emplace_back("ITS", "VERTICESMCPUR", 0, Lifetime::Timeframe);
     outputs.emplace_back("ITS", "TRACKSMCTR", 0, Lifetime::Timeframe);
     outputs.emplace_back("ITS", "ITSTrackMC2ROF", 0, Lifetime::Timeframe);
   }

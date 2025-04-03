@@ -16,7 +16,9 @@ o2_add_library(Framework
                        src/ArrowSupport.cxx
                        src/ArrowTableSlicingCache.cxx
                        src/AnalysisDataModel.cxx
+                       src/AnalysisSupportHelpers.cxx
                        src/ASoA.cxx
+                       src/ASoAHelpers.cxx
                        src/AsyncQueue.cxx
                        src/AnalysisDataModelHelpers.cxx
                        src/BoostOptionsRetriever.cxx
@@ -46,9 +48,12 @@ o2_add_library(Framework
                        src/DataProcessingStates.cxx
                        src/DefaultsHelpers.cxx
                        src/DomainInfoHeader.cxx
+                       src/EmptyFragment.cxx
                        src/ProcessingPoliciesHelpers.cxx
+                       src/ConfigParamDiscovery.cxx
                        src/ConfigParamStore.cxx
                        src/ConfigParamsHelper.cxx
+                       src/ConfigParamRegistry.cxx
                        src/ChannelParamSpec.cxx
                        src/DDSConfigHelpers.cxx
                        src/DataAllocator.cxx
@@ -109,11 +114,13 @@ o2_add_library(Framework
                        src/OptionsHelpers.cxx
                        src/PropertyTreeHelpers.cxx
                        src/ProcessingContext.cxx
-                       src/Plugins.cxx
+                       src/Plugin.cxx
+                       src/PluginManager.cxx
                        src/RateLimiter.cxx
                        src/ResourcesMonitoringHelper.cxx
                        src/ResourcePolicy.cxx
                        src/ResourcePolicyHelpers.cxx
+                       src/RootArrowFilesystem.cxx
                        src/SendingPolicy.cxx
                        src/ServiceRegistry.cxx
                        src/ServiceSpec.cxx
@@ -133,6 +140,7 @@ o2_add_library(Framework
                        src/Task.cxx
                        src/Array2D.cxx
                        src/Variant.cxx
+                       src/VariantPropertyTreeHelpers.cxx
                        src/WorkflowCustomizationHelpers.cxx
                        src/WorkflowHelpers.cxx
                        src/WorkflowSerializationHelpers.cxx
@@ -160,8 +168,10 @@ o2_add_library(Framework
                                      O2::Headers
                                      O2::MemoryResources
                                      O2::PCG
+                                     O2::X9
                                      RapidJSON::RapidJSON
                                      Arrow::arrow_shared
+                                     ArrowDataset::arrow_dataset_shared
                                      Microsoft.GSL::GSL
                                      O2::FrameworkLogger
                                      Gandiva::gandiva_shared
@@ -190,6 +200,7 @@ add_executable(o2-test-framework-core
               test/test_CompletionPolicy.cxx
               test/test_ComputingResourceHelpers.cxx
               test/test_ComputingQuotaEvaluator.cxx
+              test/test_Concepts.cxx
               test/test_ControlServiceHelpers.cxx
               test/test_ConfigParamStore.cxx
               test/test_ConfigParamRegistry.cxx
@@ -226,11 +237,11 @@ add_executable(o2-test-framework-core
               test/test_OptionsHelpers.cxx
               test/test_OverrideLabels.cxx
               test/test_O2DataModelHelpers.cxx
-              test/test_PtrHelpers.cxx
               test/test_RootConfigParamHelpers.cxx
               test/test_Services.cxx
               test/test_StringHelpers.cxx
               test/test_StaticFor.cxx
+              test/test_TableSpawner.cxx
               test/test_TMessageSerializer.cxx
               test/test_TableBuilder.cxx
               test/test_TimeParallelPipelining.cxx
@@ -239,7 +250,6 @@ add_executable(o2-test-framework-core
               test/test_Variants.cxx
               test/test_WorkflowHelpers.cxx
               test/test_WorkflowSerialization.cxx
-              test/test_TreeToTable.cxx
               test/test_DataOutputDirector.cxx
               test/unittest_SimpleOptionsRetriever.cxx
               test/unittest_DataSpecUtils.cxx
@@ -264,6 +274,10 @@ o2_add_test(Timers NAME test_Framework_test_Timers
             LABELS framework
             PUBLIC_LINK_LIBRARIES O2::Framework)
 
+o2_add_executable(framework-ao2d-to-ao3d
+            SOURCES test/o2AO2DToAO3D.cxx
+            PUBLIC_LINK_LIBRARIES O2::Framework)
+
 # FIXME: make this a proper test, when it actually does not hang.
 o2_add_executable(test-framework-ConsumeWhenAllOrdered
             SOURCES test/test_ConsumeWhenAllOrdered.cxx
@@ -281,6 +295,11 @@ o2_add_test(O2DatabasePDG NAME test_Framework_test_O2DatabasePDG
             LABELS framework
             PUBLIC_LINK_LIBRARIES O2::Framework O2::FrameworkPhysicsSupport)
 
+o2_add_executable(crashing-workflow
+            SOURCES test/test_CrashingWorkflow.cxx
+            COMPONENT_NAME Framework
+            PUBLIC_LINK_LIBRARIES O2::Framework)
+
 # All the tests which require ROOT to work
 add_executable(o2-test-framework-root
                test/test_Root2ArrowTable.cxx
@@ -288,8 +307,10 @@ add_executable(o2-test-framework-root
 target_link_libraries(o2-test-framework-root PRIVATE O2::Framework)
 target_link_libraries(o2-test-framework-root PRIVATE O2::Catch2)
 target_link_libraries(o2-test-framework-root PRIVATE ROOT::ROOTDataFrame)
+target_link_libraries(o2-test-framework-root PRIVATE ROOT::ROOTNTuple)
 set_property(TARGET o2-test-framework-root PROPERTY RUNTIME_OUTPUT_DIRECTORY ${outdir})
 add_test(NAME framework:root COMMAND o2-test-framework-root --skip-benchmarks)
+add_test(NAME framework:crash COMMAND  sh -e -c "PATH=${CMAKE_RUNTIME_OUTPUT_DIRECTORY}:$PATH ${CMAKE_CURRENT_LIST_DIR}/test/test_AllCrashTypes.sh")
 
 o2_add_test(InfoLogger NAME test_Framework_test_InfoLogger
             SOURCES test/test_InfoLogger.cxx
@@ -307,11 +328,6 @@ o2_add_executable(dpl-run
                   PUBLIC_LINK_LIBRARIES O2::Framework
                   )
 
-o2_add_executable(verify-aod-file
-                  SOURCES src/verifyAODFile.cxx
-                  PUBLIC_LINK_LIBRARIES O2::Framework ROOT::TreePlayer
-                  COMPONENT_NAME Framework)
-
 # benchmarks
 
 foreach(b
@@ -326,7 +342,6 @@ foreach(b
         EventMixing
         HistogramRegistry
         TableToTree
-        TreeToTable
         ExternalFairMQDeviceProxies
         )
   o2_add_executable(benchmark-${b}

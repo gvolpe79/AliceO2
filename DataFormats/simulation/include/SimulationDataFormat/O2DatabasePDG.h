@@ -38,10 +38,6 @@ class O2DatabasePDG
     auto db = TDatabasePDG::Instance();
     if (!initialized) {
       addALICEParticles(db);
-      if (const char* o2Root = std::getenv("O2_ROOT")) {
-        auto inputExtraPDGs = std::string(o2Root) + "/share/Detectors/gconfig/data/extra_ions_pdg_table.dat";
-        db->ReadPDGTable(inputExtraPDGs.c_str());
-      }
       initialized = true;
     }
     return db;
@@ -49,6 +45,7 @@ class O2DatabasePDG
 
   // adds ALICE particles to a given TDatabasePDG instance
   static void addALICEParticles(TDatabasePDG* db = TDatabasePDG::Instance());
+  static void addParticlesFromExternalFile(TDatabasePDG* db);
 
   // get particle's (if any) mass
   static Double_t MassImpl(TParticlePDG* particle, bool& success)
@@ -238,62 +235,38 @@ inline void O2DatabasePDG::addALICEParticles(TDatabasePDG* db)
   //Hyper nuclei and exotica
   ionCode = 1010010030;
   if (!db->GetParticle(ionCode)) {
-    db->AddParticle("HyperTriton", "HyperTriton", 2.99131, kFALSE,
+    db->AddParticle("HyperTriton", "HyperTriton", 2.991134, kFALSE,
                     2.5e-15, 3, "Ion", ionCode);
   }
 
   ionCode = -1010010030;
   if (!db->GetParticle(ionCode)) {
-    db->AddParticle("AntiHyperTriton", "AntiHyperTriton", 2.99131, kFALSE,
+    db->AddParticle("AntiHyperTriton", "AntiHyperTriton", 2.991134, kFALSE,
                     2.5e-15, 3, "Ion", ionCode);
   }
 
   //hyper hydrogen 4 ground state
   ionCode = 1010010040;
   if (!db->GetParticle(ionCode)) {
-    db->AddParticle("Hyperhydrog4", "Hyperhydrog4", 3.9226, kFALSE,
+    db->AddParticle("Hyperhydrog4", "Hyperhydrog4", 3.922434, kFALSE,
                     2.5e-15, 3, "Ion", ionCode);
   }
   //anti hyper hydrogen 4 ground state
   ionCode = -1010010040;
   if (!db->GetParticle(ionCode)) {
-    db->AddParticle("AntiHyperhydrog4", "AntiHyperhydrog4", 3.9226, kFALSE,
-                    2.5e-15, 3, "Ion", ionCode);
-  }
-  //hyper hydrogen 4 excited state
-  ionCode = 1010010041;
-  if (!db->GetParticle(ionCode)) {
-    db->AddParticle("Hyperhydrog4*", "Hyperhydrog4*", 3.9237, kFALSE,
-                    2.5e-15, 3, "Ion", ionCode);
-  }
-  //anti hyper hydrogen 4 excited state
-  ionCode = -1010010041;
-  if (!db->GetParticle(ionCode)) {
-    db->AddParticle("AntiHyperhydrog4*", "AntiHyperhydrog4*", 3.9237, kFALSE,
+    db->AddParticle("AntiHyperhydrog4", "AntiHyperhydrog4", 3.922434, kFALSE,
                     2.5e-15, 3, "Ion", ionCode);
   }
   //hyper helium 4 ground state
   ionCode = 1010020040;
   if (!db->GetParticle(ionCode)) {
-    db->AddParticle("Hyperhelium4", "Hyperhelium4", 3.9217, kFALSE,
+    db->AddParticle("Hyperhelium4", "Hyperhelium4", 3.921728, kFALSE,
                     2.5e-15, 6, "Ion", ionCode);
   }
   //anti hyper helium 4 ground state
   ionCode = -1010020040;
   if (!db->GetParticle(ionCode)) {
-    db->AddParticle("AntiHyperhelium4", "AntiHyperhelium4", 3.9217, kFALSE,
-                    2.5e-15, 6, "Ion", ionCode);
-  }
-  //hyper helium 4 excited state
-  ionCode = 1010020041;
-  if (!db->GetParticle(ionCode)) {
-    db->AddParticle("Hyperhelium4*", "Hyperhelium4*", 3.9231, kFALSE,
-                    2.5e-15, 6, "Ion", ionCode);
-  }
-  //anti hyper helium 4 excited state
-  ionCode = -1010020041;
-  if (!db->GetParticle(ionCode)) {
-    db->AddParticle("AntiHyperhelium4*", "AntiHyperhelium4*", 3.9231, kFALSE,
+    db->AddParticle("AntiHyperhelium4", "AntiHyperhelium4", 3.921728, kFALSE,
                     2.5e-15, 6, "Ion", ionCode);
   }
 
@@ -312,13 +285,13 @@ inline void O2DatabasePDG::addALICEParticles(TDatabasePDG* db)
 
   ionCode = 1010020050;
   if (!db->GetParticle(ionCode)) {
-    db->AddParticle("Hyperhelium5", "Hyperhelium5", 4.841, kFALSE,
+    db->AddParticle("Hyperhelium5", "Hyperhelium5", 4.839961, kFALSE,
                     2.5e-15, 6, "Ion", ionCode);
   }
 
   ionCode = -1010020050;
   if (!db->GetParticle(ionCode)) {
-    db->AddParticle("AntiHyperhelium5", "AntiHyperhelium5", 4.841, kFALSE,
+    db->AddParticle("AntiHyperhelium5", "AntiHyperhelium5", 4.839961, kFALSE,
                     2.5e-15, 6, "Ion", ionCode);
   }
 
@@ -331,6 +304,33 @@ inline void O2DatabasePDG::addALICEParticles(TDatabasePDG* db)
   ionCode = -1020010040;
   if (!db->GetParticle(ionCode)) {
     db->AddParticle("DoubleAntiHyperhydrogen4", "DoubleAntiHyperhydrogen4", 4.106, kFALSE,
+                    2.5e-15, 6, "Ion", ionCode);
+  }
+
+  // 4-Xi-He
+  ionCode = 1120020040;
+  if (!db->GetParticle(ionCode)) {
+    db->AddParticle("4XiHe", "4XiHe", 4.128, kFALSE, 4.04e-15, 3, "Ion", ionCode);
+    db->AddAntiParticle("Anti4XiHe", -ionCode);
+  }
+
+  // 4-Xi-H
+  ionCode = 1120010040;
+  if (!db->GetParticle(ionCode)) {
+    db->AddParticle("4XiH", "4XiH", 4.128, kFALSE, 4.04e-15, 3, "Ion", ionCode);
+    db->AddAntiParticle("Anti4XiH", -ionCode);
+  }
+
+  // hyper helium 4 sigma
+  ionCode = 1110020040;
+  if (!db->GetParticle(ionCode)) {
+    db->AddParticle("Hyperhelium4sigma", "Hyperhelium4sigma", 3.995, kFALSE,
+                    2.5e-15, 6, "Ion", ionCode);
+  }
+  // anti-hyper helium 4 sigma
+  ionCode = -1110020040;
+  if (!db->GetParticle(ionCode)) {
+    db->AddParticle("AntiHyperhelium4sigma", "AntiHyperhelium4sigma", 3.995, kFALSE,
                     2.5e-15, 6, "Ion", ionCode);
   }
 
@@ -490,6 +490,10 @@ inline void O2DatabasePDG::addALICEParticles(TDatabasePDG* db)
   }
 
   // glueball hunting
+  ionCode = 115;
+  if (!db->GetParticle(ionCode)) {
+    db->AddParticle("a2_1320", "a2_1320", 1.3182, kFALSE, 0.1078, 0, "Resonance", ionCode);
+  }
   ionCode = 10221;
   if (!db->GetParticle(ionCode)) {
     db->AddParticle("f0_1370", "f0_1370", 1.37, kFALSE, 0.200, 0, "Resonance", ionCode);
@@ -654,6 +658,26 @@ inline void O2DatabasePDG::addALICEParticles(TDatabasePDG* db)
 
   if (!db->GetParticle(-ionCode)) {
     db->AddParticle("AntiSexaquark", "AntiSexaquark", 2.0, kTRUE, 0.0, 0, "Special", -ionCode);
+  }
+
+  // lastly, add particle from the the extra text file
+  addParticlesFromExternalFile(db);
+}
+
+inline void O2DatabasePDG::addParticlesFromExternalFile(TDatabasePDG* db)
+{
+  static bool initialized = false;
+  if (!initialized) {
+    // allow user to specify custom file
+    if (const char* custom = std::getenv("O2_SIM_CUSTOM_PDG")) {
+      // TODO: make sure this is a file
+      db->ReadPDGTable(custom);
+    } else if (const char* o2Root = std::getenv("O2_ROOT")) {
+      // take the maintained file from O2
+      auto inputExtraPDGs = std::string(o2Root) + "/share/Detectors/gconfig/data/extra_ions_pdg_table.dat";
+      db->ReadPDGTable(inputExtraPDGs.c_str());
+    }
+    initialized = true;
   }
 }
 

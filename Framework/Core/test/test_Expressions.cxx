@@ -131,6 +131,22 @@ TEST_CASE("TestTreeParsing")
   REQUIRE(ptfilterspecs[0].left == (DatumSpec{std::string{"fPt"}, typeid(o2::aod::track::Pt).hash_code(), atype::FLOAT}));
   REQUIRE(ptfilterspecs[0].right == (DatumSpec{LiteralNode::var_t{0.5f}, atype::FLOAT}));
   REQUIRE(ptfilterspecs[0].result == (DatumSpec{0u, atype::BOOL}));
+
+  struct : ConfigurableGroup {
+    std::string prefix = "prefix";
+    Configurable<float> pTCut{"pTCut", 1.0f, "Lower pT limit"};
+  } group;
+  Filter ptfilter2 = o2::aod::track::pt > group.pTCut;
+  group.pTCut.name.insert(0, 1, '.');
+  group.pTCut.name.insert(0, group.prefix);
+  REQUIRE(ptfilter2.node->self.index() == 2);
+  REQUIRE(ptfilter2.node->left->self.index() == 1);
+  REQUIRE(ptfilter2.node->right->self.index() == 3);
+  REQUIRE(std::get<PlaceholderNode>(ptfilter2.node->right->self).name == "prefix.pTCut");
+  auto ptfilterspecs2 = createOperations(ptfilter2);
+  REQUIRE(ptfilterspecs2[0].left == (DatumSpec{std::string{"fPt"}, typeid(o2::aod::track::Pt).hash_code(), atype::FLOAT}));
+  REQUIRE(ptfilterspecs2[0].right == (DatumSpec{LiteralNode::var_t{1.0f}, atype::FLOAT}));
+  REQUIRE(ptfilterspecs2[0].result == (DatumSpec{0u, atype::BOOL}));
 }
 
 TEST_CASE("TestGandivaTreeCreation")
@@ -168,7 +184,7 @@ TEST_CASE("TestGandivaTreeCreation")
   auto projector_b = createProjector(schema2, ptespecs, resfield2);
   auto fields = o2::soa::createFieldsFromColumns(o2::aod::Tracks::persistent_columns_t{});
   auto schema_p = std::make_shared<arrow::Schema>(fields);
-  auto projector_alt = o2::framework::expressions::createProjectors(o2::framework::pack<o2::aod::track::Pt>{}, fields, schema_p);
+  auto projector_alt = o2::framework::expressions::createProjectors(o2::framework::pack<o2::aod::track::Pt>{}, {resfield2}, schema_p);
 
   Filter bitwiseFilter = (o2::aod::track::flags & static_cast<uint32_t>(o2::aod::track::TPCrefit)) != 0u;
   auto bwf = createOperations(bitwiseFilter);

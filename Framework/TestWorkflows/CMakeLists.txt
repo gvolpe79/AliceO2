@@ -33,6 +33,14 @@ o2_add_dpl_workflow(diamond-workflow
                   SOURCES src/o2DiamondWorkflow.cxx
                   COMPONENT_NAME TestWorkflows)
 
+o2_add_dpl_workflow(dummy-populator-workflow
+                  SOURCES src/o2DummyPopulatorWorkflow.cxx
+                  COMPONENT_NAME TestWorkflows)
+
+o2_add_dpl_workflow(analysis-histograms
+                  SOURCES src/o2TestHistograms.cxx
+                  COMPONENT_NAME TestWorkflows)
+
 o2_add_dpl_workflow(two-timers
                   SOURCES src/o2TwoTimers.cxx
                   COMPONENT_NAME TestWorkflows)
@@ -109,6 +117,10 @@ o2_add_dpl_workflow(simple-fairmq-sink
 
 o2_add_dpl_workflow(simple-sink
                   SOURCES src/o2SimpleSink.cxx
+                  COMPONENT_NAME TestWorkflows)
+
+o2_add_dpl_workflow(simple-processor
+                  SOURCES src/o2SimpleProcessor.cxx
                   COMPONENT_NAME TestWorkflows)
 
 o2_add_dpl_workflow(analysis-workflow

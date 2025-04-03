@@ -216,8 +216,52 @@ void CcdbApi::init(std::string const& host)
 
   mNeedAlienToken = (host.find("https://") != std::string::npos) || (host.find("alice-ccdb.cern.ch") != std::string::npos);
 
-  LOGP(info, "Init CcdApi with UserAgentID: {}, Host: {}{}", mUniqueAgentID, host,
-       mInSnapshotMode ? "(snapshot readonly mode)" : snapshotReport.c_str());
+  // Set the curl timeout. It can be forced with an env var or it has different defaults based on the deployment mode.
+  if (getenv("ALICEO2_CCDB_CURL_TIMEOUT_DOWNLOAD")) {
+    auto timeout = atoi(getenv("ALICEO2_CCDB_CURL_TIMEOUT_DOWNLOAD"));
+    if (timeout >= 0) { // if valid int
+      mCurlTimeoutDownload = timeout;
+    }
+  } else { // set a default depending on the deployment mode
+    o2::framework::DeploymentMode deploymentMode = o2::framework::DefaultsHelpers::deploymentMode();
+    if (deploymentMode == o2::framework::DeploymentMode::OnlineDDS ||
+        deploymentMode == o2::framework::DeploymentMode::OnlineAUX ||
+        deploymentMode == o2::framework::DeploymentMode::OnlineECS) {
+      mCurlTimeoutDownload = 15;
+    } else if (deploymentMode == o2::framework::DeploymentMode::Grid ||
+               deploymentMode == o2::framework::DeploymentMode::FST) {
+      mCurlTimeoutDownload = 15;
+    } else if (deploymentMode == o2::framework::DeploymentMode::Local) {
+      mCurlTimeoutDownload = 1;
+    }
+  }
+
+  if (getenv("ALICEO2_CCDB_CURL_TIMEOUT_UPLOAD")) {
+    auto timeout = atoi(getenv("ALICEO2_CCDB_CURL_TIMEOUT_UPLOAD"));
+    if (timeout >= 0) { // if valid int
+      mCurlTimeoutUpload = timeout;
+    }
+  } else { // set a default depending on the deployment mode
+    o2::framework::DeploymentMode deploymentMode = o2::framework::DefaultsHelpers::deploymentMode();
+    if (deploymentMode == o2::framework::DeploymentMode::OnlineDDS ||
+        deploymentMode == o2::framework::DeploymentMode::OnlineAUX ||
+        deploymentMode == o2::framework::DeploymentMode::OnlineECS) {
+      mCurlTimeoutUpload = 3;
+    } else if (deploymentMode == o2::framework::DeploymentMode::Grid ||
+               deploymentMode == o2::framework::DeploymentMode::FST) {
+      mCurlTimeoutUpload = 20;
+    } else if (deploymentMode == o2::framework::DeploymentMode::Local) {
+      mCurlTimeoutUpload = 20;
+    }
+  }
+  if (mDownloader) {
+    mDownloader->setRequestTimeoutTime(mCurlTimeoutDownload * 1000L);
+  }
+
+  LOGP(debug, "Curl timeouts are set to: download={:2}, upload={:2} seconds", mCurlTimeoutDownload, mCurlTimeoutUpload);
+
+  LOGP(info, "Init CcdApi with UserAgentID: {}, Host: {}{}, Curl timeouts: upload:{} download:{}", mUniqueAgentID, host,
+       mInSnapshotMode ? "(snapshot readonly mode)" : snapshotReport.c_str(), mCurlTimeoutUpload, mCurlTimeoutDownload);
 }
 
 void CcdbApi::runDownloaderLoop(bool noWait)
@@ -382,6 +426,7 @@ int CcdbApi::storeAsBinaryFile(const char* buffer, size_t size, const std::strin
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerlist);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, mUniqueAgentID.c_str());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, mCurlTimeoutUpload);
 
     CURLcode res = CURL_LAST;
 
@@ -395,7 +440,11 @@ int CcdbApi::storeAsBinaryFile(const char* buffer, size_t size, const std::strin
       res = CURL_perform(curl);
       /* Check for errors */
       if (res != CURLE_OK) {
-        LOGP(alarm, "curl_easy_perform() failed: {}", curl_easy_strerror(res));
+        if (res == CURLE_OPERATION_TIMEDOUT) {
+          LOGP(alarm, "curl_easy_perform() timed out. Consider increasing the timeout using the env var `ALICEO2_CCDB_CURL_TIMEOUT_UPLOAD` (seconds), current one is {}", mCurlTimeoutUpload);
+        } else { // generic message
+          LOGP(alarm, "curl_easy_perform() failed: {}", curl_easy_strerror(res));
+        }
         returnValue = res;
       }
     }
@@ -607,7 +656,37 @@ size_t header_map_callback(char* buffer, size_t size, size_t nitems, void* userd
     const auto key = boost::algorithm::trim_copy(header.substr(0, index));
     const auto value = boost::algorithm::trim_copy(header.substr(index + 1));
     LOGP(debug, "Adding #{} {} -> {}", headers->size(), key, value);
-    headers->insert(std::make_pair(key, value));
+    bool insert = true;
+    if (key == "Content-Length") {
+      auto cl = headers->find("Content-Length");
+      if (cl != headers->end()) {
+        if (std::stol(cl->second) < stol(value)) {
+          headers->erase(key);
+        } else {
+          insert = false;
+        }
+      }
+    }
+
+    // Keep only the first ETag encountered
+    if (key == "ETag") {
+      auto cl = headers->find("ETag");
+      if (cl != headers->end()) {
+        insert = false;
+      }
+    }
+
+    // Keep only the first Content-Type encountered
+    if (key == "Content-Type") {
+      auto cl = headers->find("Content-Type");
+      if (cl != headers->end()) {
+        insert = false;
+      }
+    }
+
+    if (insert) {
+      headers->insert(std::make_pair(key, value));
+    }
   }
   return size * nitems;
 }
@@ -1399,7 +1478,7 @@ std::map<std::string, std::string> CcdbApi::retrieveHeaders(std::string const& p
 
   if (!mSnapshotCachePath.empty()) {
     // protect this sensitive section by a multi-process named semaphore
-    auto semaphore_barrier = std::make_unique<CCDBSemaphore>(mSnapshotCachePath, path);
+    auto semaphore_barrier = std::make_unique<CCDBSemaphore>(mSnapshotCachePath + std::string("_headers"), path);
 
     std::string logfile = mSnapshotCachePath + "/log";
     std::fstream out(logfile, ios_base::out | ios_base::app);
@@ -1625,11 +1704,15 @@ void CcdbApi::scheduleDownload(RequestContext& requestContext, size_t* requestCo
     ho.counter++;
     try {
       if (chunk.capacity() < chunk.size() + realsize) {
+        // estimate headers size when converted to annotated text string
+        const char hannot[] = "header";
+        size_t hsize = getFlatHeaderSize(ho.header);
         auto cl = ho.header.find("Content-Length");
         if (cl != ho.header.end()) {
-          sz = std::max(chunk.size() + realsize, (size_t)std::stol(cl->second));
+          size_t sizeFromHeader = std::stol(cl->second);
+          sz = hsize + std::max(chunk.size() * (sizeFromHeader ? 1 : 2) + realsize, sizeFromHeader);
         } else {
-          sz = chunk.size() + realsize;
+          sz = hsize + std::max(chunk.size() * 2, chunk.size() + realsize);
           // LOGP(debug, "SIZE IS NOT IN HEADER, allocate {}", sz);
         }
         chunk.reserve(sz);
@@ -1656,6 +1739,7 @@ void CcdbApi::scheduleDownload(RequestContext& requestContext, size_t* requestCo
   data->timestamp = requestContext.timestamp;
   data->localContentCallback = localContentCallback;
   data->userAgent = mUniqueAgentID;
+  data->optionsList = options_list;
 
   curl_easy_setopt(curl_handle, CURLOPT_URL, fullUrl.c_str());
   initCurlOptionsForRetrieve(curl_handle, (void*)(&data->hoPair), writeCallback, false);
@@ -1803,6 +1887,21 @@ void CcdbApi::saveSnapshot(RequestContext& requestContext) const
   }
 }
 
+void CcdbApi::loadFileToMemory(std::vector<char>& dest, std::string const& path,
+                               std::map<std::string, std::string> const& metadata, long timestamp,
+                               std::map<std::string, std::string>* headers, std::string const& etag,
+                               const std::string& createdNotAfter, const std::string& createdNotBefore, bool considerSnapshot) const
+{
+  o2::pmr::vector<char> destP;
+  destP.reserve(dest.size());
+  loadFileToMemory(destP, path, metadata, timestamp, headers, etag, createdNotAfter, createdNotBefore, considerSnapshot);
+  dest.clear();
+  dest.reserve(destP.size());
+  for (const auto c : destP) {
+    dest.push_back(c);
+  }
+}
+
 void CcdbApi::loadFileToMemory(o2::pmr::vector<char>& dest, std::string const& path,
                                std::map<std::string, std::string> const& metadata, long timestamp,
                                std::map<std::string, std::string>* headers, std::string const& etag,
@@ -1819,6 +1918,25 @@ void CcdbApi::loadFileToMemory(o2::pmr::vector<char>& dest, std::string const& p
   requestContext.considerSnapshot = considerSnapshot;
   std::vector<RequestContext> contexts = {requestContext};
   vectoredLoadFileToMemory(contexts);
+}
+
+void CcdbApi::appendFlatHeader(o2::pmr::vector<char>& dest, const std::map<std::string, std::string>& headers)
+{
+  size_t hsize = getFlatHeaderSize(headers), cnt = dest.size();
+  dest.resize(cnt + hsize);
+  auto addString = [&dest, &cnt](const std::string& s) {
+    for (char c : s) {
+      dest[cnt++] = c;
+    }
+    dest[cnt++] = 0;
+  };
+
+  for (auto& h : headers) {
+    addString(h.first);
+    addString(h.second);
+  }
+  *reinterpret_cast<int*>(&dest[cnt]) = hsize;                                     // store size
+  std::memcpy(&dest[cnt + sizeof(int)], FlatHeaderAnnot, sizeof(FlatHeaderAnnot)); // annotate the flattened headers map
 }
 
 void CcdbApi::navigateSourcesAndLoadFile(RequestContext& requestContext, int& fromSnapshot, size_t* requestCounter) const
@@ -1870,20 +1988,32 @@ void CcdbApi::vectoredLoadFileToMemory(std::vector<RequestContext>& requestConte
 bool CcdbApi::loadLocalContentToMemory(o2::pmr::vector<char>& dest, std::string& url) const
 {
   if (url.find("alien:/", 0) != std::string::npos) {
-    loadFileToMemory(dest, url, nullptr); // headers loaded from the file in case of the snapshot reading only
-    return true;
+    std::map<std::string, std::string> localHeaders;
+    loadFileToMemory(dest, url, &localHeaders, false);
+    auto it = localHeaders.find("Error");
+    if (it != localHeaders.end() && it->second == "An error occurred during retrieval") {
+      return false;
+    } else {
+      return true;
+    }
   }
   if ((url.find("file:/", 0) != std::string::npos)) {
     std::string path = url.substr(7);
     if (std::filesystem::exists(path)) {
-      loadFileToMemory(dest, path, nullptr);
-      return true;
+      std::map<std::string, std::string> localHeaders;
+      loadFileToMemory(dest, url, &localHeaders, o2::utils::Str::endsWith(path, ".root"));
+      auto it = localHeaders.find("Error");
+      if (it != localHeaders.end() && it->second == "An error occurred during retrieval") {
+        return false;
+      } else {
+        return true;
+      }
     }
   }
   return false;
 }
 
-void CcdbApi::loadFileToMemory(o2::pmr::vector<char>& dest, const std::string& path, std::map<std::string, std::string>* localHeaders) const
+void CcdbApi::loadFileToMemory(o2::pmr::vector<char>& dest, const std::string& path, std::map<std::string, std::string>* localHeaders, bool fetchLocalMetaData) const
 {
   // Read file to memory as vector. For special case of the locally cached file retriev metadata stored directly in the file
   constexpr size_t MaxCopySize = 0x1L << 25;
@@ -1931,7 +2061,7 @@ void CcdbApi::loadFileToMemory(o2::pmr::vector<char>& dest, const std::string& p
     totalread += nread;
   } while (nread == (long)MaxCopySize);
 
-  if (localHeaders) {
+  if (localHeaders && fetchLocalMetaData) {
     TMemFile memFile("name", const_cast<char*>(dest.data()), dest.size(), "READ");
     auto storedmeta = (std::map<std::string, std::string>*)extractFromTFile(memFile, TClass::GetClass("std::map<std::string, std::string>"), CCDBMETA_ENTRY);
     if (storedmeta) {

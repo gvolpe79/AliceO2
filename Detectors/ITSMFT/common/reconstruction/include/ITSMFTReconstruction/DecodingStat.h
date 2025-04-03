@@ -68,6 +68,7 @@ struct ChipStat {
     FlushedIncomplete,                // ALPIDE MEB was flushed by the busy handling
     StrobeExtended,                   // ALPIDE received a second trigger while the strobe was still open
     WrongAlpideChipID,                // Impossible for given cable ALPIDE ChipOnModule ID
+    DecreasingRow,                    // Decreasing row in the same column
     NErrorsDefined
   };
 
@@ -106,6 +107,7 @@ struct ChipStat {
     "FlushedIncomplete",                            // ALPIDE MEB was flushed by the busy handling
     "StrobeExtended",                               // ALPIDE received a second trigger while the strobe was still open
     "Wrong Alpide ChipID",                          // Impossible for given cable ALPIDE ChipOnModule ID
+    "Decreasing row",                               // Decreasing row in the same column
   };
 
   static constexpr std::array<uint32_t, NErrorsDefined> ErrActions = {
@@ -143,6 +145,7 @@ struct ChipStat {
     ErrActPropagate | ErrActDump, // ALPIDE MEB was flushed by the busy handling
     ErrActPropagate | ErrActDump, // ALPIDE received a second trigger while the strobe was still open
     ErrActPropagate | ErrActDump, // Impossible for given cable ALPIDE ChipOnModule ID
+    ErrActPropagate | ErrActDump, // Decreasing row in the same column
   };
   uint16_t feeID = -1;
   size_t nHits = 0;
@@ -174,10 +177,26 @@ struct ChipStat {
     ft = c >= 0xf2 && c <= 0xfe;
     return APE_STRIP_START + c - 0xf2;
   }
+
+  // return APE byte that corresponds to the given APE DecErrors
+  static uint8_t getAPEByte(DecErrors c)
+  {
+    if (c < APE_STRIP_START || c > APE_OOT_DATA_MISSING) {
+      return 0xFF;
+    }
+    return 0xF2 + c - APE_STRIP_START;
+  }
   uint32_t getNErrors() const;
-  uint32_t addErrors(uint32_t mask, uint16_t chID, int verbosity);
   uint32_t addErrors(const ChipPixelData& d, int verbosity);
   void print(bool skipNoErr = true, const std::string& pref = "FEEID") const;
+
+  template <typename Func>
+  static void forEachError(Func f)
+  {
+    for (int errIdx = 0; errIdx < NErrorsDefined; ++errIdx) {
+      f(errIdx);
+    }
+  }
 
   ClassDefNV(ChipStat, 1);
 };
@@ -269,6 +288,14 @@ struct GBTLinkDecodingStat {
   void print(bool skipNoErr = true) const;
 
   ClassDefNV(GBTLinkDecodingStat, 3);
+};
+
+struct ErrorMessage {
+  uint16_t id = -1;
+  uint16_t errType = 0;
+  uint16_t errInfo0 = 0;
+  uint16_t errInfo1 = 0;
+  ClassDefNV(ErrorMessage, 1)
 };
 
 } // namespace itsmft

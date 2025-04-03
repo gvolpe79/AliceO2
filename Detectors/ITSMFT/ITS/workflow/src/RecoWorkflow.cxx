@@ -31,8 +31,6 @@ namespace o2
 {
 namespace its
 {
-// using ITSTrackReconstruction::TrackingMode;
-
 namespace reco_workflow
 {
 
@@ -65,7 +63,6 @@ framework::WorkflowSpec getWorkflow(bool useMC,
         cfg.runITSTracking = true;
         cfg.itsTriggerType = useTrig;
         cfg.itsOverrBeamEst = overrideBeamPosition;
-        cfg.itsTrackingMode = trmode == "sync" ? (int)TrackingMode::Sync : (trmode == "async" ? (int)TrackingMode::Async : (int)TrackingMode::Cosmics);
 
         Inputs ggInputs;
         auto ggRequest = std::make_shared<o2::base::GRPGeomRequest>(false, true, false, true, true,
@@ -82,7 +79,7 @@ framework::WorkflowSpec getWorkflow(bool useMC,
         std::move(ggInputs.begin(), ggInputs.end(), std::back_inserter(taskInputs));
 
         specs.emplace_back(DataProcessorSpec{
-          "its-tracker",
+          "its-gpu-tracker",
           taskInputs,
           task->outputs(),
           AlgorithmSpec{adoptTask<o2::gpu::GPURecoWorkflowSpec>(task)},

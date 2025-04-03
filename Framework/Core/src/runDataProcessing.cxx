@@ -8,9 +8,11 @@
 // In applying this license CERN does not waive the privileges and immunities
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
+#include <memory>
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 #include <stdexcept>
 #include "Framework/BoostOptionsRetriever.h"
+#include "Framework/BacktraceHelpers.h"
 #include "Framework/CallbacksPolicy.h"
 #include "Framework/ChannelConfigurationPolicy.h"
 #include "Framework/ChannelMatching.h"
@@ -22,7 +24,7 @@
 #include "Framework/DataProcessingDevice.h"
 #include "Framework/DataProcessingContext.h"
 #include "Framework/DataProcessorSpec.h"
-#include "Framework/Plugins.h"
+#include "Framework/PluginManager.h"
 #include "Framework/DeviceControl.h"
 #include "Framework/DeviceExecution.h"
 #include "Framework/DeviceInfo.h"
@@ -33,6 +35,7 @@
 #include "Framework/DeviceState.h"
 #include "Framework/DeviceConfig.h"
 #include "DeviceStateHelpers.h"
+#include "Framework/ServiceRegistryHelpers.h"
 #include "Framework/DevicesManager.h"
 #include "Framework/DebugGUI.h"
 #include "Framework/LocalRootFileService.h"
@@ -61,12 +64,12 @@
 #include "Framework/DataTakingContext.h"
 #include "Framework/CommonServices.h"
 #include "Framework/DefaultsHelpers.h"
-#include "ControlServiceHelpers.h"
 #include "ProcessingPoliciesHelpers.h"
 #include "DriverServerContext.h"
 #include "HTTPParser.h"
 #include "DPLWebSocket.h"
 #include "ArrowSupport.h"
+#include "Framework/ConfigParamDiscovery.h"
 
 #include "ComputingResourceHelpers.h"
 #include "DataProcessingStatus.h"
@@ -130,9 +133,6 @@
 #include <unistd.h>
 #include <execinfo.h>
 #include <cfenv>
-// This is to allow C++20 aggregate initialisation
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
 #if defined(__linux__) && __has_include(<sched.h>)
 #include <sched.h>
 #elif __has_include(<linux/getcpu.h>)
@@ -490,6 +490,7 @@ void websocket_callback(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
   } catch (WSError& e) {
     LOG(error) << "Error while parsing request: " << e.message;
     handler->error(e.code, e.message.c_str());
+    free(buf->base);
   }
 }
 
@@ -656,7 +657,7 @@ void handle_crash(int sig)
     auto retVal = write(STDERR_FILENO, buffer, strlen(buffer));
     (void)retVal;
   }
-  demangled_backtrace_symbols(array, size, STDERR_FILENO);
+  BacktraceHelpers::demangled_backtrace_symbols(array, size, STDERR_FILENO);
   {
     char const* msg = "Backtrace complete.\n";
     int len = strlen(msg); /* the byte length of the string */
@@ -690,8 +691,6 @@ void spawnDevice(uv_loop_t* loop,
   auto& spec = specs[ref.index];
   auto& execution = executions[ref.index];
 
-  driverInfo.tracyPort++;
-
   for (auto& service : spec.services) {
     if (service.preFork != nullptr) {
       service.preFork(serviceRegistry, DeviceConfig{varmap});
@@ -722,8 +721,11 @@ void spawnDevice(uv_loop_t* loop,
     struct rlimit rlim;
     getrlimit(RLIMIT_NOFILE, &rlim);
     // We close all FD, but the one which are actually
-    // used to communicate with the driver.
-    int rlim_cur = rlim.rlim_cur;
+    // used to communicate with the driver. This is a bad
+    // idea in the first place, because rlim_cur could be huge
+    // FIXME: I should understand which one is really to be closed and use
+    // CLOEXEC on it.
+    int rlim_cur = std::min((int)rlim.rlim_cur, 10000);
     for (int i = 0; i < rlim_cur; ++i) {
       if (childFds[ref.index].childstdin[0] == i) {
         continue;
@@ -737,8 +739,6 @@ void spawnDevice(uv_loop_t* loop,
     dup2(childFds[ref.index].childstdout[1], STDOUT_FILENO);
     dup2(childFds[ref.index].childstdout[1], STDERR_FILENO);
 
-    auto portS = std::to_string(driverInfo.tracyPort);
-    setenv("TRACY_PORT", portS.c_str(), 1);
     for (auto& service : spec.services) {
       if (service.postForkChild != nullptr) {
         service.postForkChild(serviceRegistry);
@@ -748,6 +748,9 @@ void spawnDevice(uv_loop_t* loop,
       putenv(strdup(DeviceSpecHelpers::reworkTimeslicePlaceholder(env, spec).data()));
     }
     execvp(execution.args[0], execution.args.data());
+  } else {
+    O2_SIGNPOST_ID_GENERATE(sid, driver);
+    O2_SIGNPOST_EVENT_EMIT(driver, sid, "spawnDevice", "New child at %{pid}d", id);
   }
   close(childFds[ref.index].childstdin[0]);
   close(childFds[ref.index].childstdout[1]);
@@ -788,7 +791,6 @@ void spawnDevice(uv_loop_t* loop,
                          .readyToQuit = false,
                          .inputChannelMetricsViewIndex = Metric2DViewIndex{"oldest_possible_timeslice", 0, 0, {}},
                          .outputChannelMetricsViewIndex = Metric2DViewIndex{"oldest_possible_output", 0, 0, {}},
-                         .tracyPort = driverInfo.tracyPort,
                          .lastSignal = uv_hrtime() - 10000000});
   // create the offset using uv_hrtime
   timespec now;
@@ -845,9 +847,7 @@ void processChildrenOutput(uv_loop_t* loop,
   // TODO: have multiple display modes
   // TODO: graphical view of the processing?
   assert(infos.size() == controls.size());
-  std::match_results<std::string_view::const_iterator> match;
   ParsedMetricMatch metricMatch;
-  ParsedConfigMatch configMatch;
 
   int processed = 0;
   for (size_t di = 0, de = infos.size(); di < de; ++di) {
@@ -878,12 +878,7 @@ void processChildrenOutput(uv_loop_t* loop,
       // in the GUI.
       // Then we check if it is part of our Poor man control system
       // if yes, we execute the associated command.
-      if (logLevel == LogParsingHelpers::LogLevel::Info && ControlServiceHelpers::parseControl(token, match)) {
-        throw runtime_error("stdout is not supported anymore as a driver backend. Please use ws://");
-      } else if (logLevel == LogParsingHelpers::LogLevel::Info && DeviceConfigHelper::parseConfig(token.substr(16), configMatch)) {
-        throw runtime_error("stdout is not supported anymore as a driver backend. Please use ws://");
-      } else if (!control.quiet && (token.find(control.logFilter) != std::string::npos) &&
-                 logLevel >= control.logLevel) {
+      if (!control.quiet && (token.find(control.logFilter) != std::string::npos) && logLevel >= info.logLevel) {
         assert(info.historyPos >= 0);
         assert(info.historyPos < info.history.size());
         info.history[info.historyPos] = token;
@@ -976,16 +971,16 @@ void doDPLException(RuntimeErrorRef& e, char const* processName)
   if (err.maxBacktrace != 0) {
     LOGP(fatal,
          "Unhandled o2::framework::runtime_error reached the top of main of {}, device shutting down."
-         " Reason: {}"
-         "\n Backtrace follow: \n",
+         " Reason: {}",
          processName, err.what);
-    demangled_backtrace_symbols(err.backtrace, err.maxBacktrace, STDERR_FILENO);
+    LOGP(error, "Backtrace follow:");
+    BacktraceHelpers::demangled_backtrace_symbols(err.backtrace, err.maxBacktrace, STDERR_FILENO);
   } else {
     LOGP(fatal,
          "Unhandled o2::framework::runtime_error reached the top of main of {}, device shutting down."
-         " Reason: {}"
-         "\n Recompile with DPL_ENABLE_BACKTRACE=1 to get more information.",
+         " Reason: {}",
          processName, err.what);
+    LOGP(error, "Recompile with DPL_ENABLE_BACKTRACE=1 to get more information.");
   }
 }
 
@@ -1034,6 +1029,7 @@ int doChild(int argc, char** argv, ServiceRegistry& serviceRegistry,
   // declared in the workflow definition are allowed.
   runner.AddHook<fair::mq::hooks::SetCustomCmdLineOptions>([&spec, driverConfig, defaultDriverClient](fair::mq::DeviceRunner& r) {
     std::string defaultExitTransitionTimeout = "0";
+    std::string defaultDataProcessingTimeout = "0";
     std::string defaultInfologgerMode = "";
     o2::framework::DeploymentMode deploymentMode = o2::framework::DefaultsHelpers::deploymentMode();
     if (deploymentMode == o2::framework::DeploymentMode::OnlineDDS) {
@@ -1045,15 +1041,17 @@ int doChild(int argc, char** argv, ServiceRegistry& serviceRegistry,
     boost::program_options::options_description optsDesc;
     ConfigParamsHelper::populateBoostProgramOptions(optsDesc, spec.options, gHiddenDeviceOptions);
     char const* defaultSignposts = getenv("DPL_SIGNPOSTS");
-    optsDesc.add_options()("monitoring-backend", bpo::value<std::string>()->default_value("default"), "monitoring backend info")                                                           //
-      ("driver-client-backend", bpo::value<std::string>()->default_value(defaultDriverClient), "backend for device -> driver communicataon: stdout://: use stdout, ws://: use websockets") //
-      ("infologger-severity", bpo::value<std::string>()->default_value(""), "minimum FairLogger severity to send to InfoLogger")                                                           //
-      ("dpl-tracing-flags", bpo::value<std::string>()->default_value(""), "pipe `|` separate list of events to be traced")                                                                 //
-      ("signposts", bpo::value<std::string>()->default_value(defaultSignposts ? defaultSignposts : ""), "comma separated list of signposts to enable")                                     //
-      ("expected-region-callbacks", bpo::value<std::string>()->default_value("0"), "how many region callbacks we are expecting")                                                           //
-      ("exit-transition-timeout", bpo::value<std::string>()->default_value(defaultExitTransitionTimeout), "how many second to wait before switching from RUN to READY")                    //
-      ("timeframes-rate-limit", bpo::value<std::string>()->default_value("0"), "how many timeframe can be in fly at the same moment (0 disables)")                                         //
-      ("configuration,cfg", bpo::value<std::string>()->default_value("command-line"), "configuration backend")                                                                             //
+    optsDesc.add_options()("monitoring-backend", bpo::value<std::string>()->default_value("default"), "monitoring backend info")                                                                   //
+      ("dpl-stats-min-online-publishing-interval", bpo::value<std::string>()->default_value("0"), "minimum flushing interval for online metrics (in s)")                                           //
+      ("driver-client-backend", bpo::value<std::string>()->default_value(defaultDriverClient), "backend for device -> driver communicataon: stdout://: use stdout, ws://: use websockets")         //
+      ("infologger-severity", bpo::value<std::string>()->default_value(""), "minimum FairLogger severity to send to InfoLogger")                                                                   //
+      ("dpl-tracing-flags", bpo::value<std::string>()->default_value(""), "pipe `|` separate list of events to be traced")                                                                         //
+      ("signposts", bpo::value<std::string>()->default_value(defaultSignposts ? defaultSignposts : ""), "comma separated list of signposts to enable")                                             //
+      ("expected-region-callbacks", bpo::value<std::string>()->default_value("0"), "how many region callbacks we are expecting")                                                                   //
+      ("exit-transition-timeout", bpo::value<std::string>()->default_value(defaultExitTransitionTimeout), "how many second to wait before switching from RUN to READY")                            //
+      ("data-processing-timeout", bpo::value<std::string>()->default_value(defaultDataProcessingTimeout), "how many second to wait before stopping data processing and allowing data calibration") //
+      ("timeframes-rate-limit", bpo::value<std::string>()->default_value("0"), "how many timeframe can be in fly at the same moment (0 disables)")                                                 //
+      ("configuration,cfg", bpo::value<std::string>()->default_value("command-line"), "configuration backend")                                                                                     //
       ("infologger-mode", bpo::value<std::string>()->default_value(defaultInfologgerMode), "O2_INFOLOGGER_MODE override");
     r.fConfig.AddToCmdLineOptions(optsDesc, true);
   });
@@ -1096,10 +1094,7 @@ int doChild(int argc, char** argv, ServiceRegistry& serviceRegistry,
     serviceRef.registerService(ServiceRegistryHelpers::handleForService<DeviceContext>(deviceContext.get()));
     serviceRef.registerService(ServiceRegistryHelpers::handleForService<DriverConfig const>(&driverConfig));
 
-    // The decltype stuff is to be able to compile with both new and old
-    // FairMQ API (one which uses a shared_ptr, the other one a unique_ptr.
-    decltype(r.fDevice) device;
-    device = make_matching<decltype(device), DataProcessingDevice>(ref, serviceRegistry, processingPolicies);
+    auto device = std::make_unique<DataProcessingDevice>(ref, serviceRegistry, processingPolicies);
 
     serviceRef.get<RawDeviceService>().setDevice(device.get());
     r.fDevice = std::move(device);
@@ -1359,6 +1354,7 @@ int runStateMachine(DataProcessorSpecs const& workflow,
                     DriverInfo& driverInfo,
                     DriverConfig& driverConfig,
                     std::vector<DeviceMetricsInfo>& metricsInfos,
+                    std::vector<ConfigParamSpec> const& detectedParams,
                     boost::program_options::variables_map& varmap,
                     std::vector<ServiceSpec>& driverServices,
                     std::string frameworkId)
@@ -1442,6 +1438,9 @@ int runStateMachine(DataProcessorSpecs const& workflow,
   if (driverConfig.batch == false && window == nullptr && frameworkId.empty()) {
     LOG(warn) << "Could not create GUI. Switching to batch mode. Do you have GLFW on your system?";
     driverConfig.batch = true;
+    if (varmap["error-policy"].defaulted()) {
+      driverInfo.processingPolicies.error = TerminationPolicy::QUIT;
+    }
   }
   bool guiQuitRequested = false;
   bool hasError = false;
@@ -1924,7 +1923,7 @@ int runStateMachine(DataProcessorSpecs const& workflow,
         } catch (o2::framework::RuntimeErrorRef ref) {
           auto& err = o2::framework::error_from_ref(ref);
 #ifdef DPL_ENABLE_BACKTRACE
-          demangled_backtrace_symbols(err.backtrace, err.maxBacktrace, STDERR_FILENO);
+          BacktraceHelpers::demangled_backtrace_symbols(err.backtrace, err.maxBacktrace, STDERR_FILENO);
 #endif
           LOGP(error, "invalid workflow in {}: {}", driverInfo.argv[0], err.what);
           return 1;
@@ -2024,6 +2023,7 @@ int runStateMachine(DataProcessorSpecs const& workflow,
             "--aod-writer-resmode",
             "--aod-writer-maxfilesize",
             "--aod-writer-keep",
+            "--aod-max-io-rate",
             "--aod-parent-access-level",
             "--aod-parent-base-path-replacement",
             "--driver-client-backend",
@@ -2048,13 +2048,14 @@ int runStateMachine(DataProcessorSpecs const& workflow,
                                               runningWorkflow.devices,
                                               deviceExecutions,
                                               controls,
+                                              detectedParams,
                                               driverInfo.uniqueWorkflowId);
         } catch (o2::framework::RuntimeErrorRef& ref) {
           auto& err = o2::framework::error_from_ref(ref);
           LOGP(error, "unable to merge configurations in {}: {}", driverInfo.argv[0], err.what);
 #ifdef DPL_ENABLE_BACKTRACE
           std::cerr << "\nStacktrace follows:\n\n";
-          demangled_backtrace_symbols(err.backtrace, err.maxBacktrace, STDERR_FILENO);
+          BacktraceHelpers::demangled_backtrace_symbols(err.backtrace, err.maxBacktrace, STDERR_FILENO);
 #endif
           return 1;
         }
@@ -2117,6 +2118,39 @@ int runStateMachine(DataProcessorSpecs const& workflow,
           uv_timer_start(&metricDumpTimer, dumpMetricsCallback,
                          driverInfo.resourcesMonitoringDumpInterval * 1000,
                          driverInfo.resourcesMonitoringDumpInterval * 1000);
+        }
+        /// Set the value for the severity of displayed logs to the command line value --severity
+        for (const auto& processorInfo : dataProcessorInfos) {
+          const auto& cmdLineArgs = processorInfo.cmdLineArgs;
+          if (std::find(cmdLineArgs.begin(), cmdLineArgs.end(), "--severity") != cmdLineArgs.end()) {
+            for (size_t counter = 0; const auto& spec : runningWorkflow.devices) {
+              if (spec.name.compare(processorInfo.name) == 0) {
+                auto& info = infos[counter];
+                const auto logLevelIt = std::find(cmdLineArgs.begin(), cmdLineArgs.end(), "--severity") + 1;
+                if ((*logLevelIt).compare("debug") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Debug;
+                } else if ((*logLevelIt).compare("detail") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Debug;
+                } else if ((*logLevelIt).compare("info") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Info;
+                } else if ((*logLevelIt).compare("warning") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Warning;
+                } else if ((*logLevelIt).compare("error") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Error;
+                } else if ((*logLevelIt).compare("important") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Info;
+                } else if ((*logLevelIt).compare("alarm") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Alarm;
+                } else if ((*logLevelIt).compare("critical") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Critical;
+                } else if ((*logLevelIt).compare("fatal") == 0) {
+                  info.logLevel = LogParsingHelpers::LogLevel::Fatal;
+                }
+                break;
+              }
+              ++counter;
+            }
+          }
         }
         LOG(info) << "Redeployment of configuration done.";
       } break;
@@ -2717,12 +2751,86 @@ std::string debugTopoInfo(std::vector<DataProcessorSpec> const& specs,
   for (auto& d : specs) {
     out << "- " << d.name << std::endl;
   }
-  out << "digraph G {\n";
-  for (auto& e : edges) {
-    out << fmt::format("  \"{}\" -> \"{}\"\n", specs[e.first].name, specs[e.second].name);
-  }
-  out << "}\n";
+  GraphvizHelpers::dumpDataProcessorSpec2Graphviz(out, specs, edges);
   return out.str();
+}
+
+void enableSignposts(std::string const& signpostsToEnable)
+{
+  static pid_t pid = getpid();
+  if (signpostsToEnable.empty() == true) {
+    auto printAllSignposts = [](char const* name, void* l, void* context) {
+      auto* log = (_o2_log_t*)l;
+      LOGP(detail, "Signpost stream {} disabled. Enable it with o2-log -p {} -a {}", name, pid, (void*)&log->stacktrace);
+      return true;
+    };
+    o2_walk_logs(printAllSignposts, nullptr);
+    return;
+  }
+  auto matchingLogEnabler = [](char const* name, void* l, void* context) {
+    auto* log = (_o2_log_t*)l;
+    auto* selectedName = (char const*)context;
+    std::string prefix = "ch.cern.aliceo2.";
+    auto* last = strchr(selectedName, ':');
+    int maxDepth = 1;
+    if (last) {
+      char* err;
+      maxDepth = strtol(last + 1, &err, 10);
+      if (*(last + 1) == '\0' || *err != '\0') {
+        maxDepth = 1;
+      }
+    }
+
+    auto fullName = prefix + std::string{selectedName, last ? last - selectedName : strlen(selectedName)};
+    if (fullName == name) {
+      LOGP(info, "Enabling signposts for stream \"{}\" with depth {}.", fullName, maxDepth);
+      _o2_log_set_stacktrace(log, maxDepth);
+      return false;
+    } else {
+      LOGP(info, "Signpost stream \"{}\" disabled. Enable it with o2-log -p {} -a {}", name, pid, (void*)&log->stacktrace);
+    }
+    return true;
+  };
+  // Split signpostsToEnable by comma using strtok_r
+  char* saveptr;
+  char* src = const_cast<char*>(signpostsToEnable.data());
+  auto* token = strtok_r(src, ",", &saveptr);
+  while (token) {
+    o2_walk_logs(matchingLogEnabler, token);
+    token = strtok_r(nullptr, ",", &saveptr);
+  }
+}
+
+void overrideAll(o2::framework::ConfigContext& ctx, std::vector<o2::framework::DataProcessorSpec>& workflow)
+{
+  overrideCloning(ctx, workflow);
+  overridePipeline(ctx, workflow);
+  overrideLabels(ctx, workflow);
+}
+
+o2::framework::ConfigContext createConfigContext(std::unique_ptr<ConfigParamRegistry>& workflowOptionsRegistry,
+                                                 o2::framework::ServiceRegistry& configRegistry,
+                                                 std::vector<o2::framework::ConfigParamSpec>& workflowOptions,
+                                                 std::vector<o2::framework::ConfigParamSpec>& extraOptions, int argc, char** argv)
+{
+  std::vector<std::unique_ptr<o2::framework::ParamRetriever>> retrievers;
+  std::unique_ptr<o2::framework::ParamRetriever> retriever{new o2::framework::BoostOptionsRetriever(true, argc, argv)};
+  retrievers.emplace_back(std::move(retriever));
+  auto workflowOptionsStore = std::make_unique<o2::framework::ConfigParamStore>(workflowOptions, std::move(retrievers));
+  workflowOptionsStore->preload();
+  workflowOptionsStore->activate();
+  workflowOptionsRegistry = std::make_unique<ConfigParamRegistry>(std::move(workflowOptionsStore));
+  extraOptions = o2::framework::ConfigParamDiscovery::discover(*workflowOptionsRegistry, argc, argv);
+  for (auto& extra : extraOptions) {
+    workflowOptions.push_back(extra);
+  }
+
+  return o2::framework::ConfigContext(*workflowOptionsRegistry, o2::framework::ServiceRegistryRef{configRegistry}, argc, argv);
+}
+
+std::unique_ptr<o2::framework::ServiceRegistry> createRegistry()
+{
+  return std::make_unique<o2::framework::ServiceRegistry>();
 }
 
 // This is a toy executor for the workflow spec
@@ -2742,8 +2850,15 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
            std::vector<CallbacksPolicy> const& callbacksPolicies,
            std::vector<SendingPolicy> const& sendingPolicies,
            std::vector<ConfigParamSpec> const& currentWorkflowOptions,
+           std::vector<ConfigParamSpec> const& detectedParams,
            o2::framework::ConfigContext& configContext)
 {
+  // Peek very early in the driver options and look for
+  // signposts, so the we can enable it without going through the whole dance
+  if (getenv("DPL_DRIVER_SIGNPOSTS")) {
+    enableSignposts(getenv("DPL_DRIVER_SIGNPOSTS"));
+  }
+
   std::vector<std::string> currentArgs;
   std::vector<PluginInfo> plugins;
   std::vector<ForwardingPolicy> forwardingPolicies = ForwardingPolicy::createDefaultPolicies();
@@ -3046,6 +3161,8 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
       fair::Logger::SetConsoleSeverity(fair::Severity::important);
     } else if (logLevel == "alarm") {
       fair::Logger::SetConsoleSeverity(fair::Severity::alarm);
+    } else if (logLevel == "critical") {
+      fair::Logger::SetConsoleSeverity(fair::Severity::critical);
     } else if (logLevel == "fatal") {
       fair::Logger::SetConsoleSeverity(fair::Severity::fatal);
     } else {
@@ -3054,38 +3171,7 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
     }
   }
 
-  static pid_t pid = getpid();
-  if (varmap.count("signposts")) {
-    auto signpostsToEnable = varmap["signposts"].as<std::string>();
-    auto matchingLogEnabler = [](char const* name, void* l, void* context) {
-      auto* log = (_o2_log_t*)l;
-      auto* selectedName = (char const*)context;
-      std::string prefix = "ch.cern.aliceo2.";
-      if (strcmp(name, (prefix + selectedName).data()) == 0) {
-        LOGP(info, "Enabling signposts for {}", *selectedName);
-        _o2_log_set_stacktrace(log, 1);
-        return false;
-      } else {
-        LOGP(info, "Signpost stream \"{}\" disabled. Enable it with o2-log -p {} -a {}", name, pid, (void*)&log->stacktrace);
-      }
-      return true;
-    };
-    // Split signpostsToEnable by comma using strtok_r
-    char* saveptr;
-    char* src = const_cast<char*>(signpostsToEnable.data());
-    auto* token = strtok_r(src, ",", &saveptr);
-    while (token) {
-      o2_walk_logs(matchingLogEnabler, token);
-      token = strtok_r(nullptr, ",", &saveptr);
-    }
-  } else {
-    auto printAllSignposts = [](char const* name, void* l, void* context) {
-      auto* log = (_o2_log_t*)l;
-      LOGP(detail, "Signpost stream {} disabled. Enable it with o2-log -p {} -a {}", name, pid, (void*)&log->stacktrace);
-      return true;
-    };
-    o2_walk_logs(printAllSignposts, nullptr);
-  }
+  enableSignposts(varmap["signposts"].as<std::string>());
 
   auto evaluateBatchOption = [&varmap]() -> bool {
     if (varmap.count("no-batch") > 0) {
@@ -3173,6 +3259,7 @@ int doMain(int argc, char** argv, o2::framework::WorkflowSpec const& workflow,
                          driverInfo,
                          driverConfig,
                          gDeviceMetricsInfos,
+                         detectedParams,
                          varmap,
                          driverServices,
                          frameworkId);

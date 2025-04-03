@@ -23,7 +23,7 @@
 namespace o2::gpu
 {
 
-int GPURecoWorkflowSpec::runITSTracking(o2::framework::ProcessingContext& pc)
+int32_t GPURecoWorkflowSpec::runITSTracking(o2::framework::ProcessingContext& pc)
 {
   mITSTimeFrame->setDevicePropagator(mGPUReco->GetDeviceO2Propagator());
   LOGP(debug, "GPUChainITS is giving me device propagator: {}", (void*)mGPUReco->GetDeviceO2Propagator());
@@ -37,11 +37,9 @@ void GPURecoWorkflowSpec::initFunctionITS(o2::framework::InitContext& ic)
   o2::its::TrackerTraits* trkTraits = nullptr;
   mITSTrackingInterface = std::make_unique<o2::its::ITSTrackingInterface>(mSpecConfig.processMC,
                                                                           mSpecConfig.itsTriggerType,
-                                                                          static_cast<o2::its::TrackingMode>(mSpecConfig.itsTrackingMode),
                                                                           mSpecConfig.itsOverrBeamEst);
   mGPUReco->GetITSTraits(trkTraits, vtxTraits, mITSTimeFrame);
   mITSTrackingInterface->setTraitsFromProvider(vtxTraits, trkTraits, mITSTimeFrame);
-  mITSTrackingInterface->initialise();
 }
 
 void GPURecoWorkflowSpec::finaliseCCDBITS(o2::framework::ConcreteDataMatcher& matcher, void* obj)

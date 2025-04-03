@@ -47,11 +47,13 @@ struct HeaderObjectPair_t {
 
 typedef struct DownloaderRequestData {
   std::vector<std::string> hosts;
+  std::vector<std::string> locations;
   std::string path;
   long timestamp;
   HeaderObjectPair_t hoPair;
   std::map<std::string, std::string>* headers;
   std::string userAgent;
+  curl_slist* optionsList;
 
   std::function<bool(std::string)> localContentCallback;
 } DownloaderRequestData;
@@ -85,6 +87,11 @@ curl_socket_t opensocketCallback(void* clientp, curlsocktype purpose, struct cur
  * @param handle Handle assigned to this callback.
  */
 void onUVClose(uv_handle_t* handle);
+
+enum DownloaderErrorLevel {
+  MINOR,
+  SEVERE
+};
 
 /// A class encapsulating and performing simple CURL requests in terms of a so-called CURL multi-handle.
 /// A multi-handle allows to use a connection pool (connection cache) in the CURL layer even
@@ -225,12 +232,13 @@ class CCDBDownloader
   std::string prepareRedirectedURL(std::string address, std::string potentialHost) const;
 
   /**
-   * Returns a vector of possible content locations based on the redirect headers.
+   * Updates the locations vector with the the locations.
    *
-   * @param baseUrl Content path.
    * @param headerMap Map containing response headers.
+   * @param locations Location list to be updated.
+   * @param locIndex Index of the next locaiton to be tried.
    */
-  std::vector<std::string> getLocations(std::multimap<std::string, std::string>* headerMap) const;
+  void updateLocations(std::multimap<std::string, std::string>* headerMap, std::vector<std::string>* locations, int* locIndex) const;
 
   std::string mUserAgentId = "CCDBDownloader";
   /**
@@ -296,6 +304,7 @@ class CCDBDownloader
     int hostInd;
     int locInd;
     DownloaderRequestData* requestData;
+    curl_slist** options;
   } PerformData;
 #endif
 
@@ -421,6 +430,6 @@ typedef struct DataForClosingSocket {
   curl_socket_t socket;
 } DataForClosingSocket;
 
-} // namespace o2
+} // namespace o2::ccdb
 
 #endif // O2_CCDB_CCDBDOWNLOADER_H

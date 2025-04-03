@@ -33,8 +33,10 @@
 #include <string>
 namespace bpo = boost::program_options;
 //
-// get object from ccdb  auto pp = ccdbMgr.getSpecific<std::vector<long>>("CTP/Calib/OrbitResetTest")
-//  std::cout  << (*pp3)[0] << std::endl;
+// get object from ccdb
+// auto & cc = o2::ccdb::BasicCCDNManager::instance();
+// auto pp = ccdbMgr.getSpecific<std::vector<long>>("CTP/Calib/OrbitResetTest")
+// std::cout  << (*pp)[0] << std::endl;
 int main(int argc, char** argv)
 {
   const std::string testCCDB = "http://ccdb-test.cern.ch:8080";
@@ -55,6 +57,7 @@ int main(int argc, char** argv)
     add_option("run-number,r", bpo::value<int64_t>()->default_value(123), "run number");
     add_option("testReset,t", bpo::value<bool>()->default_value(0), "0 = CTP/Calib/OrbitReset; 1 = CTP/Calib/OrbitResetTest");
     add_option("sox-orbit,x", bpo::value<int64_t>()->default_value(0), "SOX orbit");
+    add_option("timestamp,s", bpo::value<uint64_t>()->default_value(0), "timestamp of SOX/orbit reading; if 0 timestamp is calulated inside this code");
 
     //
     opt_all.add(opt_general).add(opt_hidden);
@@ -73,11 +76,15 @@ int main(int argc, char** argv)
     std::cerr << e.what() << ", application will now exit" << std::endl;
     exit(2);
   }
+  int ret = 0;
   std::string action = vm["action"].as<std::string>();
   std::vector<int64_t> vect;
   std::string ccdbPath;
-  auto now = std::chrono::system_clock::now();
-  long tt = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+  long tt = vm["timestamp"].as<uint64_t>();
+  if (tt == 0) {
+    auto now = std::chrono::system_clock::now();
+    tt = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+  }
   vect.push_back(tt);
   if (action == "sox") {
     // write to CTP/Calib/FirstRunOrbit
@@ -113,11 +120,11 @@ int main(int argc, char** argv)
     if (action == "sox") {
       int64_t runnum = vm["run-number"].as<int64_t>();
       metadata["runNumber"] = std::to_string(runnum);
-      std::cout << "Storing:" << ccdbPath << " " << metadata["runNumber"] << " tmin:" << tmin << " tmax:" << tmax << std::endl;
-      api.storeAsTFileAny(&(vect), ccdbPath, metadata, tmin, tmax);
+      std::cout << "Storing:" << ccdbPath << " " << metadata["runNumber"] << " tmin:" << tmin << " tmax:" << tmax << " ts:" << tt << std::endl;
+      ret = api.storeAsTFileAny(&(vect), ccdbPath, metadata, tmin, tmax);
     } else {
-      std::cout << "Storing:" << ccdbPath << " tmin:" << tmin << " tmax:" << tmax << std::endl;
-      api.storeAsTFileAny(&(vect), ccdbPath, metadata, tmin, tmax);
+      std::cout << "Storing:" << ccdbPath << " tmin:" << tmin << " tmax:" << tmax << " ts:" << tt << std::endl;
+      ret = api.storeAsTFileAny(&(vect), ccdbPath, metadata, tmin, tmax);
     }
   }
   //
@@ -126,7 +133,7 @@ int main(int argc, char** argv)
     TFile* f = TFile::Open(file.c_str(), "RECREATE");
     if (f == nullptr) {
       std::cout << "Error: File" << file << " could not be open for writing !!!" << std::endl;
-      return 1;
+      ret++;
     } else {
       std::cout << "File" << file << " being writen." << std::endl;
       f->WriteObject(&vect, "ccdb_object");
@@ -135,5 +142,5 @@ int main(int argc, char** argv)
   } else {
     std::cout << "No file created" << std::endl;
   }
-  return 0;
+  return ret;
 }

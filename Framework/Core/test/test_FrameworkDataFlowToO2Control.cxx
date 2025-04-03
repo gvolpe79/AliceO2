@@ -15,10 +15,8 @@
 #include "../src/DeviceSpecHelpers.h"
 #include "../src/SimpleResourceManager.h"
 #include "../src/ComputingResourceHelpers.h"
-#include "Framework/DataAllocator.h"
 #include "Framework/DeviceControl.h"
 #include "Framework/DeviceSpec.h"
-#include "Framework/ProcessingContext.h"
 #include "Framework/WorkflowSpec.h"
 #include "Framework/DriverConfig.h"
 #include "Framework/O2ControlParameters.h"
@@ -49,6 +47,7 @@ WorkflowSpec defineDataProcessing()
            .options = {ConfigParamSpec{"a-param", VariantType::Int, 1, {"A parameter which should not be escaped"}},
                        ConfigParamSpec{"b-param", VariantType::String, "", {"a parameter which will be escaped"}},
                        ConfigParamSpec{"c-param", VariantType::String, "foo;bar", {"another parameter which will be escaped"}},
+                       ConfigParamSpec{"d-param", VariantType::String, R"(["foo","bar"])", {"a parameter with double quotes"}},
                        ConfigParamSpec{"channel-config", VariantType::String, // raw output channel
                                        "name=outta_dpl,type=push,method=bind,address=ipc:///tmp/pipe-outta-dpl,transport=shmem,rateLogging=10",
                                        {"Out-of-band channel config"}}},
@@ -140,6 +139,7 @@ defaults:
   log_task_stdout: none
   log_task_stderr: none
   exit_transition_timeout: 15
+  data_processing_timeout: 10
   _module_cmdline: >-
     source /etc/profile.d/modules.sh && MODULEPATH={{ modulepath }} module load O2 QualityControl Control-OCCPlugin &&
     {{ dpl_command }} | bcsadc/foo
@@ -172,6 +172,8 @@ command:
     - "-b"
     - "--exit-transition-timeout"
     - "'{{ exit_transition_timeout }}'"
+    - "--data-processing-timeout"
+    - "'{{ data_processing_timeout }}'"
     - "--monitoring-backend"
     - "'{{ monitoring_dpl_url }}'"
     - "--session"
@@ -235,6 +237,7 @@ defaults:
   log_task_stdout: none
   log_task_stderr: none
   exit_transition_timeout: 15
+  data_processing_timeout: 10
   _module_cmdline: >-
     source /etc/profile.d/modules.sh && MODULEPATH={{ modulepath }} module load O2 QualityControl Control-OCCPlugin &&
     {{ dpl_command }} | foo
@@ -269,6 +272,8 @@ command:
     - "-b"
     - "--exit-transition-timeout"
     - "'{{ exit_transition_timeout }}'"
+    - "--data-processing-timeout"
+    - "'{{ data_processing_timeout }}'"
     - "--monitoring-backend"
     - "'{{ monitoring_dpl_url }}'"
     - "--session"
@@ -332,6 +337,7 @@ defaults:
   log_task_stdout: none
   log_task_stderr: none
   exit_transition_timeout: 15
+  data_processing_timeout: 10
   _module_cmdline: >-
     source /etc/profile.d/modules.sh && MODULEPATH={{ modulepath }} module load O2 QualityControl Control-OCCPlugin &&
     {{ dpl_command }} | foo
@@ -366,6 +372,8 @@ command:
     - "-b"
     - "--exit-transition-timeout"
     - "'{{ exit_transition_timeout }}'"
+    - "--data-processing-timeout"
+    - "'{{ data_processing_timeout }}'"
     - "--monitoring-backend"
     - "'{{ monitoring_dpl_url }}'"
     - "--session"
@@ -429,6 +437,7 @@ defaults:
   log_task_stdout: none
   log_task_stderr: none
   exit_transition_timeout: 15
+  data_processing_timeout: 10
   _module_cmdline: >-
     source /etc/profile.d/modules.sh && MODULEPATH={{ modulepath }} module load O2 QualityControl Control-OCCPlugin &&
     {{ dpl_command }} | foo
@@ -460,6 +469,8 @@ command:
     - "-b"
     - "--exit-transition-timeout"
     - "'{{ exit_transition_timeout }}'"
+    - "--data-processing-timeout"
+    - "'{{ data_processing_timeout }}'"
     - "--monitoring-backend"
     - "'{{ monitoring_dpl_url }}'"
     - "--session"
@@ -523,6 +534,8 @@ command:
     - "''"
     - "--c-param"
     - "'foo;bar'"
+    - "--d-param"
+    - "'[\"foo\",\"bar\"]'"
 )EXPECTED"};
 
 TEST_CASE("TestO2ControlDump")
@@ -548,10 +561,10 @@ TEST_CASE("TestO2ControlDump")
 
   std::vector<DataProcessorInfo> dataProcessorInfos = {
     {
-      {"A", "bcsadc/foo", {}, workflowOptions},
-      {"B", "foo", {}, workflowOptions},
-      {"C", "foo", {}, workflowOptions},
-      {"D", "foo", {}, workflowOptions},
+      {.name = "A", .executable = "bcsadc/foo", .workflowOptions = workflowOptions},
+      {.name = "B", .executable = "foo", .workflowOptions = workflowOptions},
+      {.name = "C", .executable = "foo", .workflowOptions = workflowOptions},
+      {.name = "D", .executable = "foo", .workflowOptions = workflowOptions},
     }};
 
   DriverConfig driverConfig{
@@ -560,7 +573,7 @@ TEST_CASE("TestO2ControlDump")
   DeviceSpecHelpers::prepareArguments(false, false, false, 8080,
                                       driverConfig,
                                       dataProcessorInfos,
-                                      devices, executions, controls,
+                                      devices, executions, controls, {},
                                       "workflow-id");
 
   dumpWorkflow(ss, devices, executions, commandInfo, "testwf", "");

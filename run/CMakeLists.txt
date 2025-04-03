@@ -37,6 +37,7 @@ target_link_libraries(allsim
                                 O2::TRDSimulation
                                 O2::FV0Simulation
                                 O2::ZDCSimulation
+                                O2::FOCALSimulation
                                 $<$<BOOL:${ENABLE_UPGRADES}>:O2::Alice3DetectorsPassive>
                                 $<$<BOOL:${ENABLE_UPGRADES}>:O2::ITS3Simulation>
                                 $<$<BOOL:${ENABLE_UPGRADES}>:O2::TRKSimulation>
@@ -148,6 +149,8 @@ o2_add_dpl_workflow(mctracks-to-aod-simple-task
 
 o2_data_file(COPY o2simtopology_template.json DESTINATION config)
 
+o2_data_file(COPY o2simdefaultdetectorlist.json DESTINATION config)
+
 # * # add a complex simulation as a unit test (if simulation was enabled)
 #   perform
 # * # some checks on kinematics and track references
@@ -190,6 +193,8 @@ o2_add_test_command(NAME o2sim_G4
                                       2
                                       --skipModules
                                       MFT ZDC
+                                      --seed
+                                      15946057944514955802
                                       --configKeyValues
                                       "align-geom.mDetectors=none"
                     ENVIRONMENT "${SIMENV}"
@@ -224,6 +229,7 @@ set_property(TEST o2sim_G4 APPEND PROPERTY ENVIRONMENT ${G4ENV})
 
 
 o2_add_test(CheckStackG4
+  COMPONENT_NAME sim
   SOURCES checkStack.cxx
   NAME o2sim_checksimkinematics_G4
   WORKING_DIRECTORY ${SIMTESTDIR}
@@ -252,6 +258,8 @@ o2_add_test_command(NAME o2sim_G3
                                       pythia8pp
                                       --chunkSize
                                       10
+                                      --seed
+                                      15946057944514955802
                                       --configKeyValues
                                       "align-geom.mDetectors=none"
                     LABELS g3 sim long
@@ -269,6 +277,7 @@ set_tests_properties(o2sim_G3
                                 G3)
 
 o2_add_test(CheckStackG3
+  COMPONENT_NAME sim
   SOURCES checkStack.cxx
   NAME o2sim_checksimkinematics_G3
   WORKING_DIRECTORY ${SIMTESTDIR}
@@ -328,3 +337,7 @@ set_tests_properties(o2sim_G4_checklogs
 endif()
 
 install(FILES o2-sim-client.py PERMISSIONS GROUP_READ GROUP_EXECUTE OWNER_EXECUTE OWNER_WRITE OWNER_READ WORLD_EXECUTE WORLD_READ DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY SimExamples/
+        DESTINATION examples
+        PATTERN *
+        PERMISSIONS GROUP_READ GROUP_EXECUTE OWNER_EXECUTE OWNER_WRITE OWNER_READ WORLD_EXECUTE WORLD_READ)

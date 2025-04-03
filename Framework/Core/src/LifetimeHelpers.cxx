@@ -25,6 +25,7 @@
 #include "Framework/FairMQDeviceProxy.h"
 #include "Framework/Formatters.h"
 #include "Framework/DeviceState.h"
+#include "Framework/DataTakingContext.h"
 #include "Framework/Signpost.h"
 
 #include "Headers/DataHeader.h"
@@ -98,7 +99,7 @@ ExpirationHandler::Creator LifetimeHelpers::enumDrivenCreation(size_t start, siz
         // associated with this.
         LOG(debug) << "Oldest possible input is " << decongestion.nextEnumerationTimeslice;
         [[maybe_unused]] auto newOldest = index.setOldestPossibleInput({decongestion.nextEnumerationTimeslice}, channelIndex);
-        index.updateOldestPossibleOutput();
+        index.updateOldestPossibleOutput(decongestion.nextEnumerationTimesliceRewinded);
         return slot;
       }
     }
@@ -143,7 +144,7 @@ ExpirationHandler::Creator LifetimeHelpers::timeDrivenCreation(std::vector<std::
     // Nothing to do if the time has not expired yet.
     if (timerHasFired == false) {
       [[maybe_unused]] auto newOldest = index.setOldestPossibleInput({decongestion.nextEnumerationTimeslice}, channelIndex);
-      index.updateOldestPossibleOutput();
+      index.updateOldestPossibleOutput(decongestion.nextEnumerationTimesliceRewinded);
       return TimesliceSlot{TimesliceSlot::INVALID};
     }
     // Get the first time we were invoked.
@@ -168,7 +169,7 @@ ExpirationHandler::Creator LifetimeHelpers::timeDrivenCreation(std::vector<std::
       auto& variables = index.getVariablesForSlot(slot);
       if (VariableContextHelpers::getTimeslice(variables).value == current) {
         [[maybe_unused]] auto newOldest = index.setOldestPossibleInput({decongestion.nextEnumerationTimeslice}, channelIndex);
-        index.updateOldestPossibleOutput();
+        index.updateOldestPossibleOutput(decongestion.nextEnumerationTimesliceRewinded);
         return TimesliceSlot{TimesliceSlot::INVALID};
       }
     }
@@ -192,7 +193,7 @@ ExpirationHandler::Creator LifetimeHelpers::timeDrivenCreation(std::vector<std::
     }
 
     auto newOldest = index.setOldestPossibleInput({decongestion.nextEnumerationTimeslice}, channelIndex);
-    index.updateOldestPossibleOutput();
+    index.updateOldestPossibleOutput(decongestion.nextEnumerationTimesliceRewinded);
     return slot;
   };
 }
@@ -421,6 +422,11 @@ ExpirationHandler::Handler LifetimeHelpers::enumerate(ConcreteDataMatcher const&
     dh.payloadSize = sizeof(counter_t);
     dh.payloadSerializationMethod = gSerializationMethodNone;
     dh.tfCounter = timestamp;
+    try {
+      dh.runNumber = atoi(services.get<DataTakingContext>().runNumber.c_str());
+    } catch (...) {
+      dh.runNumber = 0;
+    }
     dh.firstTForbit = timestamp * orbitMultiplier + orbitOffset;
     DataProcessingHeader dph{timestamp, 1};
     services.get<CallbackService>().call<CallbackService::Id::NewTimeslice>(dh, dph);
@@ -442,7 +448,6 @@ ExpirationHandler::Handler LifetimeHelpers::enumerate(ConcreteDataMatcher const&
     *(counter_t*)payload->GetData() = *counter;
     ref.payload = std::move(payload);
     (*counter)++;
-
   };
 }
 

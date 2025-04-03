@@ -15,6 +15,7 @@
 #include "TRDBase/Geometry.h"
 #include "DetectorsCommonDataFormats/DetectorNameConf.h"
 #include "DetectorsBase/GeometryManager.h"
+#include "DetectorsBase/GlobalParams.h"
 #include "DetectorsBase/Propagator.h"
 #include "ReconstructionDataFormats/TrackTPCITS.h"
 #include "DataFormatsTRD/Tracklet64.h"
@@ -50,6 +51,10 @@
 #include "GPUTRDTrackletWord.h"
 #include "GPUTRDInterfaces.h"
 #include "GPUTRDGeometry.h"
+
+#ifdef ENABLE_UPGRADES
+#include "ITS3Reconstruction/IOUtils.h"
+#endif
 
 #include <regex>
 #include <algorithm>
@@ -186,6 +191,13 @@ void TRDGlobalTracking::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
     mITSDict = (const o2::itsmft::TopologyDictionary*)obj;
     return;
   }
+#ifdef ENABLE_UPGRADES
+  if (matcher == ConcreteDataMatcher("IT3", "CLUSDICT", 0)) {
+    LOG(info) << "it3 cluster dictionary updated";
+    mIT3Dict = (const o2::its3::TopologyDictionary*)obj;
+    return;
+  }
+#endif
 }
 
 void TRDGlobalTracking::fillMCTruthInfo(const TrackTRD& trk, o2::MCCompLabel lblSeed, std::vector<o2::MCCompLabel>& lblContainerTrd, std::vector<o2::MCCompLabel>& lblContainerMatch, const o2::dataformats::MCTruthContainer<o2::MCCompLabel>* trkltLabels) const
@@ -276,6 +288,7 @@ void TRDGlobalTracking::run(ProcessingContext& pc)
 
   mTPCClusterIdxStruct = &inputTracks.inputsTPCclusters->clusterIndex;
   mTPCRefitter = std::make_unique<o2::gpu::GPUO2InterfaceRefit>(mTPCClusterIdxStruct, &mTPCCorrMapsLoader, o2::base::Propagator::Instance()->getNominalBz(), inputTracks.getTPCTracksClusterRefs().data(), 0, inputTracks.clusterShMapTPC.data(), inputTracks.occupancyMapTPC.data(), inputTracks.occupancyMapTPC.size(), nullptr, o2::base::Propagator::Instance());
+  mTPCRefitter->setTrackReferenceX(900); // disable propagation after refit by setting reference to value > 500
   auto tmpInputContainer = getRecoInputContainer(pc, &mChainTracking->mIOPtrs, &inputTracks, mUseMC);
   auto tmpContainer = GPUWorkflowHelper::fillIOPtr(mChainTracking->mIOPtrs, inputTracks, mUseMC, nullptr, GTrackID::getSourcesMask("TRD"), mTrkMask, GTrackID::mask_t{GTrackID::MASK_NONE});
   mTrackletsRaw = inputTracks.getTRDTracklets();
@@ -292,7 +305,15 @@ void TRDGlobalTracking::run(ProcessingContext& pc)
     auto pattIt = patterns.begin();
     mITSClustersArray.clear();
     mITSClustersArray.reserve(clusITS.size());
+#ifdef ENABLE_UPGRADES
+    if (o2::GlobalParams::Instance().withITS3) {
+      o2::its3::ioutils::convertCompactClusters(clusITS, pattIt, mITSClustersArray, mIT3Dict);
+    } else {
+      o2::its::ioutils::convertCompactClusters(clusITS, pattIt, mITSClustersArray, mITSDict);
+    }
+#else
     o2::its::ioutils::convertCompactClusters(clusITS, pattIt, mITSClustersArray, mITSDict);
+#endif
   }
 
   LOGF(info, "There are %i tracklets in total from %i trigger records", mChainTracking->mIOPtrs.nTRDTracklets, mChainTracking->mIOPtrs.nTRDTriggerRecords);
@@ -594,7 +615,6 @@ bool TRDGlobalTracking::refitITSTPCTRDTrack(TrackTRD& trk, float timeTRD, o2::gl
     LOG(debug) << "TRD refit outwards failed";
     return false;
   }
-
   // refit ITS-TPC-TRD track inwards to innermost ITS cluster
   // here we also calculate the LT integral for matching to TOF
   float chi2In = 0.f;
@@ -606,6 +626,12 @@ bool TRDGlobalTracking::refitITSTPCTRDTrack(TrackTRD& trk, float timeTRD, o2::gl
   retVal = mTPCRefitter->RefitTrackAsTrackParCov(trk, mTPCTracksArray[detRefs[GTrackID::TPC]].getClusterRef(), timeTRD * mTPCTBinMUSInv, &chi2In, false, false); // inward refit
   if (retVal < 0) {
     LOG(debug) << "TPC refit inwards failed";
+    return false;
+  }
+  // if for some reason the track was overshoot over the inner field cage, bring it back w/o material correction and LTintegral update
+  if (trk.getX() < o2::constants::geom::XTPCInnerRef &&
+      !propagator->PropagateToXBxByBz(trk, o2::constants::geom::XTPCInnerRef, o2::base::Propagator::MAX_SIN_PHI, o2::base::Propagator::MAX_STEP, o2::base::Propagator::MatCorrType::USEMatCorrNONE)) {
+    LOG(debug) << "BACK-Propagationto inner boundary failed";
     return false;
   }
   auto posEnd = trk.getXYZGlo();
@@ -667,8 +693,8 @@ bool TRDGlobalTracking::refitTPCTRDTrack(TrackTRD& trk, float timeTRD, o2::globa
   auto detRefs = recoCont->getSingleDetectorRefs(trk.getRefGlobalTrackId());
   outerParam = trk;
   float chi2Out = 0, timeZErr = 0.;
-  bool pileUpOn = trk.hasPileUpInfo();                                                                                                                                                           // distance to farthest collision within the pileup integration time is set
-  int retVal = mTPCRefitter->RefitTrackAsTrackParCov(outerParam, mTPCTracksArray[detRefs[GTrackID::TPC]].getClusterRef(), timeTRD * mTPCTBinMUSInv, &chi2Out, true, false);                      // outward refit
+  bool pileUpOn = trk.hasPileUpInfo();                                                                                                                                      // distance to farthest collision within the pileup integration time is set
+  int retVal = mTPCRefitter->RefitTrackAsTrackParCov(outerParam, mTPCTracksArray[detRefs[GTrackID::TPC]].getClusterRef(), timeTRD * mTPCTBinMUSInv, &chi2Out, true, false); // outward refit
   if (retVal < 0) {
     LOG(debug) << "TPC refit outwards failed";
     return false;
@@ -697,7 +723,12 @@ bool TRDGlobalTracking::refitTPCTRDTrack(TrackTRD& trk, float timeTRD, o2::globa
   if (pileUpOn) { // account pileup time uncertainty in Z errors
     trk.updateCov(timeZErr, o2::track::CovLabels::kSigZ2);
   }
-
+  // if for some reason the track was overshoot over the inner field cage, bring it back w/o material correction and LTintegral update
+  if (trk.getX() < o2::constants::geom::XTPCInnerRef &&
+      !propagator->PropagateToXBxByBz(trk, o2::constants::geom::XTPCInnerRef, o2::base::Propagator::MAX_SIN_PHI, o2::base::Propagator::MAX_STEP, o2::base::Propagator::MatCorrType::USEMatCorrNONE)) {
+    LOG(debug) << "BACK-Propagationto inner boundary failed";
+    return false;
+  }
   auto posEnd = trk.getXYZGlo();
   auto lInt = propagator->estimateLTIncrement(trk, posStart, posEnd);
   trk.getLTIntegralOut().addStep(lInt, trk.getP2Inv());
@@ -832,7 +863,15 @@ DataProcessorSpec getTRDGlobalTrackingSpec(bool useMC, GTrackID::mask_t src, boo
   dataRequest->requestTPCClusters(false); // only needed for refit, don't care about labels
   if (GTrackID::includesSource(GTrackID::Source::ITSTPC, src)) {
     // ITS clusters are only needed if we match to ITS-TPC tracks
+#ifdef ENABLE_UPGRADES
+    if (o2::GlobalParams::Instance().withITS3) {
+      dataRequest->requestIT3Clusters(false); // only needed for refit, don't care about labels
+    } else {
+      dataRequest->requestITSClusters(false); // only needed for refit, don't care about labels
+    }
+#else
     dataRequest->requestITSClusters(false); // only needed for refit, don't care about labels
+#endif
     trkSrc |= GTrackID::getSourcesMask("ITS");
   }
   dataRequest->requestTracks(trkSrc, useMC);

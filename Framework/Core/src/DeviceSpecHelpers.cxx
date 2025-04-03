@@ -32,7 +32,7 @@
 #include "Framework/OutputRoute.h"
 #include "Framework/WorkflowSpec.h"
 #include "Framework/ComputingResource.h"
-#include "Framework/Logger.h"
+#include "Framework/Signpost.h"
 #include "Framework/RuntimeError.h"
 #include "Framework/RawDeviceService.h"
 #include "ProcessingPoliciesHelpers.h"
@@ -50,8 +50,7 @@
 
 #include <regex>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
+O2_DECLARE_DYNAMIC_LOG(device_spec_helpers);
 
 namespace bpo = boost::program_options;
 
@@ -125,7 +124,9 @@ struct ExpirationHandlerHelpers {
       if (periods.empty()) {
         std::string defaultRateName = std::string{"period-"} + matcher.binding;
         auto defaultRate = std::chrono::milliseconds(options.get<int>(defaultRateName.c_str()));
-        LOGP(detail, "Using default rate of {} ms as specified by option period-{}", defaultRate.count(), matcher.binding);
+        O2_SIGNPOST_ID_GENERATE(tid, device_spec_helpers);
+        O2_SIGNPOST_EVENT_EMIT(device_spec_helpers, tid, "timeDrivenCreation", "Using default rate of %" PRIi64 " ms as specified by option period-%{public}s", defaultRate.count(),
+                               matcher.binding.c_str());
         periods.emplace_back(defaultRate.count());
         durations.emplace_back(std::chrono::seconds((std::size_t)-1));
       } else {
@@ -630,6 +631,28 @@ void DeviceSpecHelpers::processOutEdgeActions(ConfigContext const& configContext
     }
     DeviceConnectionId id{edge.producer, edge.consumer, edge.timeIndex, edge.producerTimeIndex, channel.port};
     connections.push_back(id);
+
+    auto& source = workflow[edge.producer];
+
+    O2_SIGNPOST_ID_GENERATE(sid, device_spec_helpers);
+    O2_SIGNPOST_START(device_spec_helpers, sid, "new channels", "Channel %{public}s has been created.", channel.name.c_str());
+    O2_SIGNPOST_ID_GENERATE(iid, device_spec_helpers);
+    O2_SIGNPOST_START(device_spec_helpers, iid, "producer outputs", "Producer %{public}s has the following outputs:", source.name.c_str());
+    for (auto& output : source.outputs) {
+      O2_SIGNPOST_EVENT_EMIT(device_spec_helpers, iid, "producer outputs", "%{public}s", DataSpecUtils::describe(output).c_str());
+    }
+    O2_SIGNPOST_END(device_spec_helpers, iid, "producer outputs", "");
+    O2_SIGNPOST_START(device_spec_helpers, iid, "producer forwards", "Producer %{public}s has the following forwards:", source.name.c_str());
+    for (auto& forwards : device.forwards) {
+      O2_SIGNPOST_EVENT_EMIT(device_spec_helpers, iid, "producer forwards", "%{public}s", DataSpecUtils::describe(forwards.matcher).c_str());
+    }
+    O2_SIGNPOST_END(device_spec_helpers, iid, "producer forwards", "");
+    O2_SIGNPOST_START(device_spec_helpers, iid, "consumer inputs", "Consumer %{public}s has the following inputs:", consumer.name.c_str());
+    for (auto& input : consumer.inputs) {
+      O2_SIGNPOST_EVENT_EMIT(device_spec_helpers, iid, "consumer inputs", "%{public}s", DataSpecUtils::describe(input).c_str());
+    }
+    O2_SIGNPOST_END(device_spec_helpers, iid, "consumer inputs", "");
+    O2_SIGNPOST_END(device_spec_helpers, sid, "new channels", "");
     return channel;
   };
 
@@ -1095,6 +1118,10 @@ void DeviceSpecHelpers::dataProcessorSpecs2DeviceSpecs(const WorkflowSpec& workf
 {
   // Always check for validity of the workflow before instanciating it
   DeviceSpecHelpers::validate(workflow);
+  // In case the workflow is empty, we simply do not need to instanciate any device.
+  if (workflow.empty()) {
+    return;
+  }
   std::vector<LogicalForwardInfo> availableForwardsInfo;
   std::vector<DeviceConnectionEdge> logicalEdges;
   std::vector<DeviceConnectionId> connections;
@@ -1359,12 +1386,15 @@ void DeviceSpecHelpers::prepareArguments(bool defaultQuiet, bool defaultStopped,
                                          std::vector<DeviceSpec> const& deviceSpecs,
                                          std::vector<DeviceExecution>& deviceExecutions,
                                          std::vector<DeviceControl>& deviceControls,
+                                         std::vector<ConfigParamSpec> const& detectedOptions,
                                          std::string const& uniqueWorkflowId)
 {
   assert(deviceSpecs.size() == deviceExecutions.size());
   assert(deviceControls.size() == deviceExecutions.size());
   for (size_t si = 0; si < deviceSpecs.size(); ++si) {
     auto& spec = deviceSpecs[si];
+    O2_SIGNPOST_ID_GENERATE(poid, device_spec_helpers);
+    O2_SIGNPOST_START(device_spec_helpers, poid, "prepareArguments", "Preparing options for %{public}s", spec.id.c_str());
     auto& control = deviceControls[si];
     auto& execution = deviceExecutions[si];
 
@@ -1373,7 +1403,14 @@ void DeviceSpecHelpers::prepareArguments(bool defaultQuiet, bool defaultStopped,
 
     int argc;
     char** argv;
-    std::vector<ConfigParamSpec> workflowOptions;
+    // We need to start with the detected options, so that they are not lost.
+    // Notice how detected options can be detected at any moment in the chain,
+    // so it's important that if you rely on them, they get passed on
+    // always.
+    std::vector<ConfigParamSpec> workflowOptions = detectedOptions;
+    for (auto& opt : detectedOptions) {
+      O2_SIGNPOST_EVENT_EMIT(device_spec_helpers, poid, "prepareArguments", "Processor option %{public}s passed as previously detected", opt.name.c_str());
+    }
     /// Lookup the executable name in the metadata associated with the workflow.
     /// If we find it, we rewrite the command line arguments to be processed
     /// so that they look like the ones passed to the merged workflow.
@@ -1386,8 +1423,17 @@ void DeviceSpecHelpers::prepareArguments(bool defaultQuiet, bool defaultStopped,
       argv[ai + 1] = strdup(arg.data());
     }
     argv[argc] = nullptr;
-    workflowOptions = pi->workflowOptions;
+    for (auto& opt : pi->workflowOptions) {
+      O2_SIGNPOST_EVENT_EMIT(device_spec_helpers, poid, "prepareArguments", "Processor option %{public}s found in process description", opt.name.c_str());
+      workflowOptions.push_back(opt);
+    }
+    std::sort(workflowOptions.begin(), workflowOptions.end(), [](ConfigParamSpec const& a, ConfigParamSpec const& b) { return a.name < b.name; });
+    auto last = std::unique(workflowOptions.begin(), workflowOptions.end());
+    workflowOptions.erase(last, workflowOptions.end());
 
+    for (auto& opt : workflowOptions) {
+      O2_SIGNPOST_EVENT_EMIT(device_spec_helpers, poid, "prepareArguments", "Final unique option %{public}s added to list of workflowOptions", opt.name.c_str());
+    }
     // We duplicate the list of options, filtering only those
     // which are actually relevant for the given device. The additional
     // four are to add
@@ -1495,6 +1541,7 @@ void DeviceSpecHelpers::prepareArguments(bool defaultQuiet, bool defaultStopped,
         realOdesc.add_options()("child-driver", bpo::value<std::string>());
         realOdesc.add_options()("rate", bpo::value<std::string>());
         realOdesc.add_options()("exit-transition-timeout", bpo::value<std::string>());
+        realOdesc.add_options()("data-processing-timeout", bpo::value<std::string>());
         realOdesc.add_options()("expected-region-callbacks", bpo::value<std::string>());
         realOdesc.add_options()("timeframes-rate-limit", bpo::value<std::string>());
         realOdesc.add_options()("environment", bpo::value<std::string>());
@@ -1662,7 +1709,8 @@ void DeviceSpecHelpers::prepareArguments(bool defaultQuiet, bool defaultStopped,
       assert(execution.args[ai]);
       str << " " << execution.args[ai];
     }
-    LOG(debug) << "The following options are being forwarded to " << spec.id << ":" << str.str();
+    O2_SIGNPOST_END(device_spec_helpers, poid, "prepareArguments", "The following options are being forwarded to %{public}s: %{public}s",
+                    spec.id.c_str(), str.str().c_str());
   }
 }
 
@@ -1680,6 +1728,7 @@ boost::program_options::options_description DeviceSpecHelpers::getForwardedDevic
     ("control-port", bpo::value<std::string>(), "Utility port to be used by O2 Control")                                                                             //
     ("rate", bpo::value<std::string>(), "rate for a data source device (Hz)")                                                                                        //
     ("exit-transition-timeout", bpo::value<std::string>(), "timeout before switching to READY state")                                                                //
+    ("data-processing-timeout", bpo::value<std::string>(), "timeout after which only calibration can happen")                                                        //
     ("expected-region-callbacks", bpo::value<std::string>(), "region callbacks to expect before starting")                                                           //
     ("timeframes-rate-limit", bpo::value<std::string>()->default_value("0"), "how many timeframes can be in fly")                                                    //
     ("shm-monitor", bpo::value<std::string>(), "whether to use the shared memory monitor")                                                                           //
@@ -1708,6 +1757,7 @@ boost::program_options::options_description DeviceSpecHelpers::getForwardedDevic
     ("configuration,cfg", bpo::value<std::string>(), "configuration connection string")                                                                              //
     ("driver-client-backend", bpo::value<std::string>(), "driver connection string")                                                                                 //
     ("monitoring-backend", bpo::value<std::string>(), "monitoring connection string")                                                                                //
+    ("dpl-stats-min-online-publishing-interval", bpo::value<std::string>(), "minimum flushing interval for online metrics (in s)")                                   //
     ("infologger-mode", bpo::value<std::string>(), "O2_INFOLOGGER_MODE override")                                                                                    //
     ("infologger-severity", bpo::value<std::string>(), "minimun FairLogger severity which goes to info logger")                                                      //
     ("dpl-tracing-flags", bpo::value<std::string>(), "pipe separated list of events to trace")                                                                       //

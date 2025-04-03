@@ -26,14 +26,12 @@ class Alice3Pipe : public Alice3PassiveBase
   ~Alice3Pipe() override;
   Alice3Pipe(const char* name,
              const char* title = "Alice 3 Pipe",
-             const bool isTRKActivated = false,
-             const bool isFT3Activated = false,
              const float pipeRIn = 0.f,
              const float pipeThickness = 0.f,
              const float a3ipLength = 0.f,
              const float vacuumVesselRIn = 0.f,
              const float vacuumVesselThickness = 0.f,
-             const float vacuumVesselLength = 0.f);
+             const float vacuumVesselASideLength = 0.f);
 
   void ConstructGeometry() override;
 
@@ -48,10 +46,7 @@ class Alice3Pipe : public Alice3PassiveBase
   float getVacuumVesselRIn() const { return mVacuumVesselRIn; }
   float getVacuumVesselRMax() const { return mVacuumVesselRIn + mVacuumVesselThick; }
   float getVacuumVesselWidth() const { return mVacuumVesselThick; }
-  float getVacuumVesselLength() const { return mVacuumVesselLength; }
-
-  bool IsTRKActivated() const { return mIsTRKActivated; }
-  bool IsFT3Activated() const { return mIsFT3Activated; }
+  float getVacuumVesselLength() const { return mVacuumVesselASideLength; }
 
  private:
   void createMaterials();
@@ -62,12 +57,9 @@ class Alice3Pipe : public Alice3PassiveBase
   float mPipeThick = 0.;  // inner beam pipe section thickness
   float mA3IPLength = 0.; // Length of A3IP
 
-  float mVacuumVesselRIn = 0.;    // inner diameter of the vacuum vessel
-  float mVacuumVesselThick = 0.;  // outer beam pipe section thickness
-  float mVacuumVesselLength = 0.; // half length of the outer beampipe around the IP
-
-  bool mIsTRKActivated = true; // If TRK is not active don't create TRK layers allocations in the vacuum volume
-  bool mIsFT3Activated = true;
+  float mVacuumVesselRIn = 0.;         // inner diameter of the vacuum vessel
+  float mVacuumVesselThick = 0.;       // outer beam pipe section thickness
+  float mVacuumVesselASideLength = 0.; // Length of the A Side of the vacuum vessel around the IP
 
   ClassDefOverride(Alice3Pipe, 1);
 };

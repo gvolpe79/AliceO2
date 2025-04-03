@@ -33,6 +33,7 @@
 #include <memory>
 #include <tuple>
 #include <type_traits>
+#include <concepts>
 
 namespace arrow
 {
@@ -51,12 +52,7 @@ namespace o2::framework
 {
 namespace detail
 {
-/// FIXME: adapt type conversion to arrow 1.0
-// This is needed by Arrow 0.12.0 which dropped
-//
-//      using ArrowType = ArrowType_;
-//
-// from ARROW_STL_CONVERSION
+/// FIXME: adapt type conversion to new arrow
 template <typename T>
 struct ConversionTraits {
 };
@@ -68,6 +64,11 @@ struct ConversionTraits<T (&)[N]> {
 
 template <typename T, int N>
 struct ConversionTraits<T[N]> {
+  using ArrowType = ::arrow::FixedSizeListType;
+};
+
+template <typename T, int N>
+struct ConversionTraits<std::array<T, N>> {
   using ArrowType = ::arrow::FixedSizeListType;
 };
 
@@ -365,6 +366,27 @@ struct BuilderMaker<T[N]> {
   }
 };
 
+template <typename T, int N>
+struct BuilderMaker<std::array<T, N>> {
+  using FillType = T*;
+  using BuilderType = arrow::FixedSizeListBuilder;
+  using ArrowType = arrow::FixedSizeListType;
+  using ElementType = typename detail::ConversionTraits<T>::ArrowType;
+
+  static std::unique_ptr<BuilderType> make(arrow::MemoryPool* pool)
+  {
+    std::unique_ptr<arrow::ArrayBuilder> valueBuilder;
+    auto status =
+      arrow::MakeBuilder(pool, arrow::TypeTraits<ElementType>::type_singleton(), &valueBuilder);
+    return std::make_unique<BuilderType>(pool, std::move(valueBuilder), N);
+  }
+
+  static std::shared_ptr<arrow::DataType> make_datatype()
+  {
+    return arrow::fixed_size_list(arrow::TypeTraits<ElementType>::type_singleton(), N);
+  }
+};
+
 template <typename T>
 struct BuilderMaker<std::vector<T>> {
   using FillType = std::vector<T>;
@@ -462,10 +484,10 @@ struct CachedInsertion {
   int pos = 0;
 };
 
-template <size_t I, typename T, template <typename U> typename InsertionPolicy>
-struct BuilderHolder : InsertionPolicy<T> {
+template <size_t I, typename T, typename P>
+struct BuilderHolder : P {
   static constexpr size_t index = I;
-  using Policy = InsertionPolicy<T>;
+  using Policy = P;
   using ArrowType = typename detail::ConversionTraits<T>::ArrowType;
   using BuilderType = typename arrow::TypeTraits<ArrowType>::BuilderType;
 
@@ -547,75 +569,16 @@ constexpr auto tuple_to_pack(std::tuple<ARGS...>&&)
   return framework::pack<ARGS...>{};
 }
 
-/// Detect if this is a fixed size array
-/// FIXME: Notice that C++20 provides a method with the same name
-/// so we should move to it when we switch.
-template <class T>
-struct is_bounded_array : std::false_type {
-};
+template <typename T>
+concept BulkInsertable = (std::integral<std::decay<T>> && !std::same_as<bool, std::decay_t<T>>);
 
-template <class T, std::size_t N>
-struct is_bounded_array<T[N]> : std::true_type {
-};
-
-template <class T, std::size_t N>
-struct is_bounded_array<std::array<T, N>> : std::true_type {
-};
-
-template <size_t I, typename T>
-struct HolderTrait {
-
-  using Holder = BuilderHolder<I, T, DirectInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, int8_t> {
-  using Holder = BuilderHolder<I, int8_t, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, uint8_t> {
-  using Holder = BuilderHolder<I, uint8_t, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, uint16_t> {
-  using Holder = BuilderHolder<I, uint16_t, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, int16_t> {
-  using Holder = BuilderHolder<I, int16_t, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, int> {
-  using Holder = BuilderHolder<I, int, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, float> {
-  using Holder = BuilderHolder<I, float, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, double> {
-  using Holder = BuilderHolder<I, double, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, unsigned int> {
-  using Holder = BuilderHolder<I, unsigned int, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, uint64_t> {
-  using Holder = BuilderHolder<I, uint64_t, CachedInsertion>;
-};
-
-template <size_t I>
-struct HolderTrait<I, int64_t> {
-  using Holder = BuilderHolder<I, int64_t, CachedInsertion>;
+template <typename T>
+struct InsertionTrait {
+  static consteval DirectInsertion<T> policy()
+    requires(!BulkInsertable<T>);
+  static consteval CachedInsertion<T> policy()
+    requires(BulkInsertable<T>);
+  using Policy = decltype(policy());
 };
 
 /// Helper function to convert a brace-initialisable struct to
@@ -645,7 +608,7 @@ template <typename... ARGS>
 constexpr auto makeHolderTypes()
 {
   return []<std::size_t... Is>(std::index_sequence<Is...>) {
-    return std::tuple(typename HolderTrait<Is, ARGS>::Holder(arrow::default_memory_pool())...);
+    return std::tuple(BuilderHolder<Is, ARGS, typename InsertionTrait<ARGS>::Policy>(arrow::default_memory_pool())...);
   }(std::make_index_sequence<sizeof...(ARGS)>{});
 }
 
@@ -653,12 +616,15 @@ template <typename... ARGS>
 auto makeHolders(arrow::MemoryPool* pool, size_t nRows)
 {
   return [pool, nRows]<std::size_t... Is>(std::index_sequence<Is...>) {
-    return new std::tuple(typename HolderTrait<Is, ARGS>::Holder(pool, nRows)...);
+    return new std::tuple(BuilderHolder<Is, ARGS, typename InsertionTrait<ARGS>::Policy>(pool, nRows)...);
   }(std::make_index_sequence<sizeof...(ARGS)>{});
 }
 
 template <typename... ARGS>
 using IndexedHoldersTuple = decltype(makeHolderTypes<ARGS...>());
+
+template <typename T>
+concept ShouldNotDeconstruct = std::is_bounded_array_v<T> || std::is_arithmetic_v<T> || framework::is_base_of_template_v<std::vector, T>;
 
 /// Helper class which creates a lambda suitable for building
 /// an arrow table from a tuple. This can be used, for example
@@ -668,7 +634,7 @@ class TableBuilder
   static void throwError(RuntimeErrorRef const& ref);
 
   template <typename... ARGS>
-  using HoldersTuple = typename std::tuple<typename HolderTrait<0, ARGS>::Holder...>;
+  using HoldersTuple = typename std::tuple<BuilderHolder<0, ARGS, typename InsertionTrait<ARGS>::Policy>...>;
 
   template <typename... ARGS>
   using HoldersTupleIndexed = decltype(makeHolderTypes<ARGS...>());
@@ -698,29 +664,21 @@ class TableBuilder
   }
 
  public:
-  template <typename... ARGS>
+  template <typename ARG0, typename... ARGS>
+    requires(sizeof...(ARGS) == 0) && (!ShouldNotDeconstruct<ARG0>)
   static constexpr int countColumns()
   {
-    using args_pack_t = framework::pack<ARGS...>;
-    if constexpr (sizeof...(ARGS) == 1 &&
-                  is_bounded_array<pack_element_t<0, args_pack_t>>::value == false &&
-                  std::is_arithmetic_v<pack_element_t<0, args_pack_t>> == false &&
-                  framework::is_base_of_template_v<std::vector, pack_element_t<0, args_pack_t>> == false) {
-      using objType_t = pack_element_t<0, framework::pack<ARGS...>>;
-      using argsPack_t = decltype(tuple_to_pack(framework::to_tuple(std::declval<objType_t>())));
-      return framework::pack_size(argsPack_t{});
-    } else if constexpr (sizeof...(ARGS) == 1 &&
-                         (is_bounded_array<pack_element_t<0, args_pack_t>>::value == true ||
-                          framework::is_base_of_template_v<std::vector, pack_element_t<0, args_pack_t>> == true)) {
-      using objType_t = pack_element_t<0, framework::pack<ARGS...>>;
-      using argsPack_t = framework::pack<objType_t>;
-      return framework::pack_size(argsPack_t{});
-    } else if constexpr (sizeof...(ARGS) >= 1) {
-      return sizeof...(ARGS);
-    } else {
-      static_assert(o2::framework::always_static_assert_v<ARGS...>, "Unmanaged case");
-    }
+    using argsPack_t = decltype(tuple_to_pack(framework::to_tuple(std::declval<ARG0>())));
+    return framework::pack_size(argsPack_t{});
   }
+
+  template <typename ARG0, typename... ARGS>
+    requires(sizeof...(ARGS) > 0) || ShouldNotDeconstruct<ARG0>
+  static constexpr int countColumns()
+  {
+    return 1 + sizeof...(ARGS);
+  }
+
   void setLabel(const char* label);
 
   TableBuilder(arrow::MemoryPool* pool = arrow::default_memory_pool())
@@ -736,39 +694,29 @@ class TableBuilder
 
   /// Creates a lambda which is suitable to persist things
   /// in an arrow::Table
-  template <typename... ARGS, size_t NCOLUMNS = countColumns<ARGS...>()>
-  auto persist(std::array<char const*, NCOLUMNS> const& columnNames)
+  template <typename ARG0, typename... ARGS>
+    requires(sizeof...(ARGS) > 0) || ShouldNotDeconstruct<ARG0>
+  auto persist(std::array<char const*, sizeof...(ARGS) + 1> const& columnNames)
   {
-    using args_pack_t = framework::pack<ARGS...>;
-    if constexpr (sizeof...(ARGS) == 1 &&
-                  is_bounded_array<pack_element_t<0, args_pack_t>>::value == false &&
-                  std::is_arithmetic_v<pack_element_t<0, args_pack_t>> == false &&
-                  framework::is_base_of_template_v<std::vector, pack_element_t<0, args_pack_t>> == false) {
-      using objType_t = pack_element_t<0, framework::pack<ARGS...>>;
-      using argsPack_t = decltype(tuple_to_pack(framework::to_tuple(std::declval<objType_t>())));
-      auto persister = persistTuple(argsPack_t{}, columnNames);
-      return [persister = persister](unsigned int slot, objType_t const& obj) -> void {
-        auto t = to_tuple(obj);
-        persister(slot, t);
-      };
-    } else if constexpr (sizeof...(ARGS) == 1 &&
-                         (is_bounded_array<pack_element_t<0, args_pack_t>>::value == true ||
-                          framework::is_base_of_template_v<std::vector, pack_element_t<0, args_pack_t>> == true)) {
-      using objType_t = pack_element_t<0, framework::pack<ARGS...>>;
-      auto persister = persistTuple(framework::pack<objType_t>{}, columnNames);
-      // Callback used to fill the builders
-      return [persister = persister](unsigned int slot, typename BuilderMaker<objType_t>::FillType const& arg) -> void {
-        persister(slot, std::forward_as_tuple(arg));
-      };
-    } else if constexpr (sizeof...(ARGS) >= 1) {
-      auto persister = persistTuple(framework::pack<ARGS...>{}, columnNames);
-      // Callback used to fill the builders
-      return [persister = persister](unsigned int slot, typename BuilderMaker<ARGS>::FillType... args) -> void {
-        persister(slot, std::forward_as_tuple(args...));
-      };
-    } else {
-      static_assert(o2::framework::always_static_assert_v<ARGS...>, "Unmanaged case");
-    }
+    auto persister = persistTuple(framework::pack<ARG0, ARGS...>{}, columnNames);
+    // Callback used to fill the builders
+    return [persister = persister](unsigned int slot, typename BuilderMaker<ARG0>::FillType const& arg, typename BuilderMaker<ARGS>::FillType... args) -> void {
+      persister(slot, std::forward_as_tuple(arg, args...));
+    };
+  }
+
+  // Special case for a single parameter to handle the serialization of struct
+  // which can be decomposed
+  template <typename ARG0, typename... ARGS>
+    requires(sizeof...(ARGS) == 0) && (!ShouldNotDeconstruct<ARG0>)
+  auto persist(std::array<char const*, countColumns<ARG0, ARGS...>()> const& columnNames)
+  {
+    using argsPack_t = decltype(tuple_to_pack(framework::to_tuple(std::declval<ARG0>())));
+    auto persister = persistTuple(argsPack_t{}, columnNames);
+    return [persister = persister](unsigned int slot, ARG0 const& obj) -> void {
+      auto t = to_tuple(obj);
+      persister(slot, t);
+    };
   }
 
   /// Same a the above, but use a tuple to persist stuff.
@@ -798,6 +746,12 @@ class TableBuilder
     return [this]<typename... Cs>(pack<Cs...>) {
       return this->template persist<typename Cs::type...>({Cs::columnLabel()...});
     }(typename T::table_t::persistent_columns_t{});
+  }
+
+  template <typename... Cs>
+  auto cursor(framework::pack<Cs...>)
+  {
+    return this->template persist<typename Cs::type...>({Cs::columnLabel()...});
   }
 
   template <typename T, typename E>
@@ -882,16 +836,84 @@ auto makeEmptyTable(const char* name)
   return b.finalize();
 }
 
-std::shared_ptr<arrow::Table> spawnerHelper(std::shared_ptr<arrow::Table>& fullTable, std::shared_ptr<arrow::Schema> newSchema, size_t nColumns,
+template <soa::TableRef R>
+auto makeEmptyTable()
+{
+  TableBuilder b;
+  [[maybe_unused]] auto writer = b.cursor(typename aod::MetadataTrait<aod::Hash<R.desc_hash>>::metadata::persistent_columns_t{});
+  b.setLabel(aod::label<R>());
+  return b.finalize();
+}
+
+template <typename... Cs>
+auto makeEmptyTable(const char* name, framework::pack<Cs...> p)
+{
+  TableBuilder b;
+  [[maybe_unused]] auto writer = b.cursor(p);
+  b.setLabel(name);
+  return b.finalize();
+}
+
+std::shared_ptr<arrow::Table> spawnerHelper(std::shared_ptr<arrow::Table> const& fullTable, std::shared_ptr<arrow::Schema> newSchema, size_t nColumns,
                                             expressions::Projector* projectors, std::vector<std::shared_ptr<arrow::Field>> const& fields, const char* name);
 
 /// Expression-based column generator to materialize columns
+template <aod::is_aod_hash D>
+auto spawner(std::vector<std::shared_ptr<arrow::Table>>&& tables, const char* name)
+{
+  using expression_pack_t = typename o2::aod::MetadataTrait<D>::metadata::expression_pack_t;
+  auto fullTable = soa::ArrowHelpers::joinTables(std::move(tables));
+  if (fullTable->num_rows() == 0) {
+    return makeEmptyTable(name, expression_pack_t{});
+  }
+  static auto fields = o2::soa::createFieldsFromColumns(expression_pack_t{});
+  static auto new_schema = std::make_shared<arrow::Schema>(fields);
+  auto projectors = []<typename... C>(framework::pack<C...>) -> std::array<expressions::Projector, sizeof...(C)>
+  {
+    return {{std::move(C::Projector())...}};
+  }
+  (expression_pack_t{});
+
+  return spawnerHelper(fullTable, new_schema, framework::pack_size(expression_pack_t{}), projectors.data(), fields, name);
+}
+
+template <aod::is_aod_hash D>
+auto spawner(std::shared_ptr<arrow::Table> const& fullTable, const char* name)
+{
+  using expression_pack_t = typename o2::aod::MetadataTrait<D>::metadata::expression_pack_t;
+  if (fullTable->num_rows() == 0) {
+    return makeEmptyTable(name, expression_pack_t{});
+  }
+  static auto fields = o2::soa::createFieldsFromColumns(expression_pack_t{});
+  static auto new_schema = std::make_shared<arrow::Schema>(fields);
+  auto projectors = []<typename... C>(framework::pack<C...>) -> std::array<expressions::Projector, sizeof...(C)>
+  {
+    return {{std::move(C::Projector())...}};
+  }
+  (expression_pack_t{});
+
+  return spawnerHelper(fullTable, new_schema, framework::pack_size(expression_pack_t{}), projectors.data(), fields, name);
+}
+
+// template <soa::OriginEnc ORIGIN, typename... C>
+// auto spawner(framework::pack<C...> columns, std::vector<std::shared_ptr<arrow::Table>>&& tables, const char* name)
+// {
+//   auto fullTable = soa::ArrowHelpers::joinTables(std::move(tables));
+//   if (fullTable->num_rows() == 0) {
+//     return makeEmptyTable<soa::Table<ORIGIN, C...>>(name);
+//   }
+//   static auto fields = o2::soa::createFieldsFromColumns(columns);
+//   static auto new_schema = std::make_shared<arrow::Schema>(fields);
+//   std::array<expressions::Projector, sizeof...(C)> projectors{{std::move(C::Projector())...}};
+//   return spawnerHelper(fullTable, new_schema, sizeof...(C), projectors.data(), fields, name);
+// }
+
 template <typename... C>
 auto spawner(framework::pack<C...> columns, std::vector<std::shared_ptr<arrow::Table>>&& tables, const char* name)
 {
   auto fullTable = soa::ArrowHelpers::joinTables(std::move(tables));
   if (fullTable->num_rows() == 0) {
-    return makeEmptyTable<soa::Table<C...>>(name);
+    return makeEmptyTable(name, framework::pack<C...>{});
   }
   static auto fields = o2::soa::createFieldsFromColumns(columns);
   static auto new_schema = std::make_shared<arrow::Schema>(fields);

@@ -34,11 +34,9 @@ class ITSTrackingInterface
  public:
   ITSTrackingInterface(bool isMC,
                        int trgType,
-                       const TrackingMode trMode,
                        const bool overrBeamEst)
     : mIsMC{isMC},
       mUseTriggers{trgType},
-      mMode{trMode},
       mOverrideBeamEstimation{overrBeamEst}
   {
   }
@@ -46,8 +44,11 @@ class ITSTrackingInterface
   void setClusterDictionary(const o2::itsmft::TopologyDictionary* d) { mDict = d; }
   void setMeanVertex(const o2::dataformats::MeanVertexObject* v)
   {
-    if (!v) {
+    if (v == nullptr) {
+      LOGP(error, "Mean Vertex Object is nullptr");
       return;
+    } else {
+      LOGP(info, "Mean Vertex set with x: {} y: {}", v->getX(), v->getY());
     }
     mMeanVertex = v;
   }
@@ -56,23 +57,41 @@ class ITSTrackingInterface
   template <bool isGPU = false>
   void run(framework::ProcessingContext& pc);
 
-  void updateTimeDependentParams(framework::ProcessingContext& pc);
-  void finaliseCCDB(framework::ConcreteDataMatcher& matcher, void* obj);
+  virtual void updateTimeDependentParams(framework::ProcessingContext& pc);
+  virtual void finaliseCCDB(framework::ConcreteDataMatcher& matcher, void* obj);
 
   // Custom
   void setTraitsFromProvider(VertexerTraits*, TrackerTraits*, TimeFrame*);
+  void setTrackingMode(TrackingMode mode = TrackingMode::Unset)
+  {
+    if (mode == TrackingMode::Unset) {
+      LOGP(fatal, "ITS Tracking mode Unset is meant to be a default. Specify the mode");
+    }
+    mMode = mode;
+  }
+
+  auto getTracker() const { return mTracker.get(); }
+  auto getVertexer() const { return mVertexer.get(); }
+
+  TimeFrame* mTimeFrame = nullptr;
+
+ protected:
+  virtual void loadROF(gsl::span<itsmft::ROFRecord>& trackROFspan,
+                       gsl::span<const itsmft::CompClusterExt> clusters,
+                       gsl::span<const unsigned char>::iterator& pattIt,
+                       const dataformats::MCTruthContainer<MCCompLabel>* mcLabels);
+  void getConfiguration(framework::ProcessingContext& pc);
 
  private:
   bool mIsMC = false;
   bool mRunVertexer = true;
   bool mCosmicsProcessing = false;
   int mUseTriggers = 0;
-  TrackingMode mMode = TrackingMode::Sync;
+  TrackingMode mMode = TrackingMode::Unset;
   bool mOverrideBeamEstimation = false;
   const o2::itsmft::TopologyDictionary* mDict = nullptr;
   std::unique_ptr<Tracker> mTracker = nullptr;
   std::unique_ptr<Vertexer> mVertexer = nullptr;
-  TimeFrame* mTimeFrame = nullptr;
   const o2::dataformats::MeanVertexObject* mMeanVertex;
 };
 
